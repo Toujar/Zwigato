@@ -1,197 +1,360 @@
-
 package com.fooddelivery.service.impl;
 
 import com.fooddelivery.dto.request.OrderItemRequest;
 import com.fooddelivery.dto.request.OrderRequest;
 import com.fooddelivery.dto.response.OrderItemResponse;
 import com.fooddelivery.dto.response.OrderResponse;
+import com.fooddelivery.dto.response.PaymentResponse;
 import com.fooddelivery.entity.*;
 import com.fooddelivery.entity.enums.OrderStatus;
+import com.fooddelivery.entity.enums.UserRole;
 import com.fooddelivery.exception.BadRequestException;
 import com.fooddelivery.exception.ResourceNotFoundException;
+import com.fooddelivery.exception.UnauthorizedException;
 import com.fooddelivery.repository.*;
 import com.fooddelivery.service.OrderService;
+import com.fooddelivery.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.math.RoundingMode;
 
+/**
+ * Manages the full order lifecycle from placement to delivery.
+ *
+ * Amount calculation:
+ *  subtotal     = sum of (unitPrice × quantity) per item
+ *  deliveryFee  = flat ₹40 (replace with distance-based logic later)
+ *  tax          = 5% of subtotal  (GST placeholder)
+ *  totalAmount  = subtotal + deliveryFee + tax
+ *
+ * Authorization model:
+ *  placeOrder    — any authenticated user
+ *  getOrderById  — order owner, restaurant owner of that order, or ADMIN
+ *  updateStatus  — restaurant owner of that order, DELIVERY_AGENT (assigned), or ADMIN
+ *  cancelOrder   — order owner only, while status is PLACED or CONFIRMED
+ */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
-    private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository;
-    private final FoodItemRepository foodItemRepository;
+    private static final BigDecimal DELIVERY_FEE     = BigDecimal.valueOf(40);
+    private static final BigDecimal TAX_RATE         = BigDecimal.valueOf(0.05); // 5 %
+
+    private final OrderRepository      orderRepository;
+    private final FoodItemRepository   foodItemRepository;
     private final RestaurantRepository restaurantRepository;
-    private final UserRepository userRepository;
-    private final CartRepository cartRepository;
-    private final CartItemRepository cartItemRepository;
+    private final CartRepository       cartRepository;
+    private final CartItemRepository   cartItemRepository;
+    private final SecurityUtils        securityUtils;
+
+    // ---------------------------------------------------------------
+    // Place order
+    // ---------------------------------------------------------------
 
     @Override
     @Transactional
     public OrderResponse placeOrder(OrderRequest request) {
-        User currentUser = getCurrentUser();
-        Restaurant restaurant = restaurantRepository.findById(request.getRestaurantId())
-                .orElseThrow(() -> new ResourceNotFoundException("Restaurant", "id", request.getRestaurantId()));
+        User currentUser = securityUtils.getCurrentUser();
 
-        if (!restaurant.getIsOpen() || !restaurant.getIsActive()) {
-            throw new BadRequestException("Restaurant is not accepting orders right now");
+        Restaurant restaurant = restaurantRepository.findById(request.getRestaurantId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Restaurant", "id", request.getRestaurantId()));
+
+        if (!restaurant.getIsActive()) {
+            throw new BadRequestException("Restaurant is no longer active");
+        }
+        if (!restaurant.getIsOpen()) {
+            throw new BadRequestException(
+                    "'" + restaurant.getName() + "' is currently closed");
         }
 
-        // Create order first
+        // Build Order shell (no subtotal yet)
         Order order = Order.builder()
                 .user(currentUser)
                 .restaurant(restaurant)
-                .deliveryAddress(request.getDeliveryAddress())
+                .deliveryAddress(request.getDeliveryAddress().trim())
                 .status(OrderStatus.PLACED)
                 .specialInstructions(request.getSpecialInstructions())
+                .deliveryFee(DELIVERY_FEE)
+                .tax(BigDecimal.ZERO)           // recalculated below
+                .subtotal(BigDecimal.ZERO)      // recalculated below
+                .totalAmount(BigDecimal.ZERO)   // recalculated below
                 .build();
 
-        // Add order items and compute subtotal
+        // Validate and add each item
         BigDecimal subtotal = BigDecimal.ZERO;
-        for (OrderItemRequest itemRequest : request.getItems()) {
-            FoodItem foodItem = foodItemRepository.findById(itemRequest.getFoodItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException("FoodItem", "id", itemRequest.getFoodItemId()));
 
+        for (OrderItemRequest itemReq : request.getItems()) {
+            FoodItem foodItem = foodItemRepository.findById(itemReq.getFoodItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "FoodItem", "id", itemReq.getFoodItemId()));
+
+            // Cross-restaurant guard
             if (!foodItem.getRestaurant().getId().equals(restaurant.getId())) {
-                throw new BadRequestException("All items must be from the same restaurant");
-            }
-            if (!foodItem.getIsAvailable()) {
-                throw new BadRequestException("Food item " + foodItem.getName() + " is no longer available");
+                throw new BadRequestException(
+                        "Food item '" + foodItem.getName()
+                                + "' does not belong to the selected restaurant");
             }
 
-            BigDecimal unitPrice = foodItem.getPrice();
-            int quantity = itemRequest.getQuantity();
-            BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(quantity));
+            if (!foodItem.getIsAvailable()) {
+                throw new BadRequestException(
+                        "'" + foodItem.getName() + "' is no longer available");
+            }
+
+            BigDecimal unitPrice    = foodItem.getPrice();
+            int        qty          = itemReq.getQuantity();
+            BigDecimal lineSubtotal = unitPrice.multiply(BigDecimal.valueOf(qty));
 
             OrderItem orderItem = OrderItem.builder()
                     .foodItem(foodItem)
-                    .quantity(quantity)
+                    .quantity(qty)
                     .unitPrice(unitPrice)
-                    .subtotal(itemSubtotal)
+                    .subtotal(lineSubtotal)
                     .build();
             order.addOrderItem(orderItem);
-            subtotal = subtotal.add(itemSubtotal);
+            subtotal = subtotal.add(lineSubtotal);
         }
 
-        // Set order amounts
+        if (subtotal.compareTo(restaurant.getMinOrderAmount()) < 0) {
+            throw new BadRequestException(
+                    "Minimum order amount for this restaurant is ₹"
+                            + restaurant.getMinOrderAmount());
+        }
+
+        // Final amounts
+        BigDecimal tax   = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal total = subtotal.add(DELIVERY_FEE).add(tax);
+
         order.setSubtotal(subtotal);
-        order.setDeliveryFee(restaurant.getMinOrderAmount().compareTo(BigDecimal.ZERO) > 0
-                ? BigDecimal.valueOf(50) : BigDecimal.ZERO); // Example delivery fee
-        order.setTax(subtotal.multiply(BigDecimal.valueOf(0.05))); // 5% tax example
-        order.setTotalAmount(order.getSubtotal().add(order.getDeliveryFee()).add(order.getTax()));
+        order.setTax(tax);
+        order.setTotalAmount(total);
 
-        Order savedOrder = orderRepository.save(order);
+        Order saved = orderRepository.save(order);
 
-        // Clear cart if it exists and matches restaurant
+        // Clear user's cart if it was locked to this restaurant
         cartRepository.findByUser_Id(currentUser.getId()).ifPresent(cart -> {
-            if (cart.getRestaurant() != null && cart.getRestaurant().getId().equals(restaurant.getId())) {
+            if (cart.getRestaurant() != null
+                    && cart.getRestaurant().getId().equals(restaurant.getId())) {
                 cartItemRepository.deleteByCart_Id(cart.getId());
                 cart.setRestaurant(null);
                 cartRepository.save(cart);
             }
         });
 
-        return mapToOrderResponse(savedOrder);
+        log.info("Order placed: {} for user {} at restaurant {}",
+                saved.getId(), currentUser.getEmail(), restaurant.getName());
+        return toResponse(saved);
     }
 
+    // ---------------------------------------------------------------
+    // Get orders for current user
+    // ---------------------------------------------------------------
+
     @Override
+    @Transactional(readOnly = true)
     public Page<OrderResponse> getOrdersForCurrentUser(Pageable pageable) {
-        User currentUser = getCurrentUser();
-        return orderRepository.findByUser_IdOrderByPlacedAtDesc(currentUser.getId(), pageable)
-                .map(this::mapToOrderResponse);
+        User currentUser = securityUtils.getCurrentUser();
+        return orderRepository
+                .findByUser_IdOrderByPlacedAtDesc(currentUser.getId(), pageable)
+                .map(this::toResponse);
     }
 
+    // ---------------------------------------------------------------
+    // Get order by ID
+    // ---------------------------------------------------------------
+
     @Override
+    @Transactional(readOnly = true)
     public OrderResponse getOrderById(Long id) {
         Order order = orderRepository.findByIdWithItemsAndPayment(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", "id", id));
-        User currentUser = getCurrentUser();
-        if (!order.getUser().getId().equals(currentUser.getId())
-                && !currentUser.getRole().name().equals("ADMIN")
-                && (order.getRestaurant().getOwner() == null || !order.getRestaurant().getOwner().getId().equals(currentUser.getId()))) {
-            throw new BadRequestException("You are not authorized to view this order");
-        }
-        return mapToOrderResponse(order);
+
+        User currentUser = securityUtils.getCurrentUser();
+        assertCanViewOrder(order, currentUser);
+        return toResponse(order);
     }
+
+    // ---------------------------------------------------------------
+    // Update status
+    // ---------------------------------------------------------------
 
     @Override
     @Transactional
     public OrderResponse updateOrderStatus(Long id, OrderStatus newStatus) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", "id", id));
-        User currentUser = getCurrentUser();
-        if (!currentUser.getRole().name().equals("ADMIN")
-                && (order.getRestaurant().getOwner() == null || !order.getRestaurant().getOwner().getId().equals(currentUser.getId()))) {
-            throw new BadRequestException("You are not authorized to update this order status");
-        }
+
+        User currentUser = securityUtils.getCurrentUser();
+        assertCanUpdateStatus(order, currentUser);
+
+        // Validate the status transition
+        validateStatusTransition(order.getStatus(), newStatus);
+
         order.setStatus(newStatus);
-        Order savedOrder = orderRepository.save(order);
-        return mapToOrderResponse(savedOrder);
+        Order saved = orderRepository.save(order);
+
+        log.info("Order {} status changed: {} → {} by {}",
+                id, order.getStatus(), newStatus, currentUser.getEmail());
+        return toResponse(saved);
     }
+
+    // ---------------------------------------------------------------
+    // Cancel order
+    // ---------------------------------------------------------------
 
     @Override
     @Transactional
     public OrderResponse cancelOrder(Long id) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", "id", id));
-        User currentUser = getCurrentUser();
+
+        User currentUser = securityUtils.getCurrentUser();
+
+        // Only the customer who placed the order can cancel
         if (!order.getUser().getId().equals(currentUser.getId())) {
-            throw new BadRequestException("You are not authorized to cancel this order");
+            throw new UnauthorizedException(
+                    "You are not authorised to cancel this order");
         }
+
         if (!order.isCancellable()) {
-            throw new BadRequestException("Order cannot be cancelled at this stage");
+            throw new BadRequestException(
+                    "Order cannot be cancelled once it is in '"
+                            + order.getStatus().name() + "' status. "
+                            + "Cancellation is only allowed before preparation starts.");
         }
+
         order.setStatus(OrderStatus.CANCELLED);
-        Order savedOrder = orderRepository.save(order);
-        return mapToOrderResponse(savedOrder);
+        Order saved = orderRepository.save(order);
+
+        log.info("Order {} cancelled by user {}", id, currentUser.getEmail());
+        return toResponse(saved);
     }
 
-    private User getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String email = authentication.getName();
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User", "email", email));
+    // ---------------------------------------------------------------
+    // Private — authorisation helpers
+    // ---------------------------------------------------------------
+
+    /**
+     * Who can VIEW an order:
+     *  - The customer who placed it.
+     *  - The owner of the restaurant the order was placed at.
+     *  - Any ADMIN.
+     *  - The assigned delivery agent.
+     */
+    private void assertCanViewOrder(Order order, User currentUser) {
+        if (currentUser.getRole().equals(UserRole.ADMIN)) return;
+        if (order.getUser().getId().equals(currentUser.getId())) return;
+        if (order.getRestaurant().getOwner() != null
+                && order.getRestaurant().getOwner().getId().equals(currentUser.getId())) return;
+        if (order.getDeliveryAgent() != null
+                && order.getDeliveryAgent().getId().equals(currentUser.getId())) return;
+
+        throw new UnauthorizedException("You are not authorised to view this order");
     }
 
-    private OrderResponse mapToOrderResponse(Order order) {
+    /**
+     * Who can UPDATE order status:
+     *  - The restaurant owner of this specific order.
+     *  - The assigned delivery agent (to mark DELIVERED).
+     *  - Any ADMIN.
+     */
+    private void assertCanUpdateStatus(Order order, User currentUser) {
+        if (currentUser.getRole().equals(UserRole.ADMIN)) return;
+        if (order.getRestaurant().getOwner() != null
+                && order.getRestaurant().getOwner().getId().equals(currentUser.getId())) return;
+        if (currentUser.getRole().equals(UserRole.DELIVERY_AGENT)
+                && order.getDeliveryAgent() != null
+                && order.getDeliveryAgent().getId().equals(currentUser.getId())) return;
+
+        throw new UnauthorizedException("You are not authorised to update this order's status");
+    }
+
+    /**
+     * Enforces valid lifecycle transitions.
+     *
+     * Valid forward transitions:
+     *   PLACED → CONFIRMED
+     *   CONFIRMED → PREPARING
+     *   PREPARING → OUT_FOR_DELIVERY
+     *   OUT_FOR_DELIVERY → DELIVERED
+     *
+     * CANCELLED is handled separately in cancelOrder().
+     * Backward transitions are never allowed.
+     */
+    private void validateStatusTransition(OrderStatus current, OrderStatus next) {
+        boolean valid = switch (current) {
+            case PLACED            -> next == OrderStatus.CONFIRMED  || next == OrderStatus.CANCELLED;
+            case CONFIRMED         -> next == OrderStatus.PREPARING  || next == OrderStatus.CANCELLED;
+            case PREPARING         -> next == OrderStatus.OUT_FOR_DELIVERY;
+            case OUT_FOR_DELIVERY  -> next == OrderStatus.DELIVERED;
+            default                -> false;
+        };
+        if (!valid) {
+            throw new BadRequestException(
+                    "Invalid status transition: " + current.name() + " → " + next.name());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Mappers
+    // ---------------------------------------------------------------
+
+    private OrderResponse toResponse(Order o) {
         return OrderResponse.builder()
-                .id(order.getId())
-                .userId(order.getUser().getId())
-                .userName(order.getUser().getName())
-                .restaurantId(order.getRestaurant().getId())
-                .restaurantName(order.getRestaurant().getName())
-                .deliveryAgentId(order.getDeliveryAgent() != null ? order.getDeliveryAgent().getId() : null)
-                .deliveryAgentName(order.getDeliveryAgent() != null ? order.getDeliveryAgent().getName() : null)
-                .deliveryAddress(order.getDeliveryAddress())
-                .status(order.getStatus())
-                .subtotal(order.getSubtotal())
-                .deliveryFee(order.getDeliveryFee())
-                .tax(order.getTax())
-                .totalAmount(order.getTotalAmount())
-                .specialInstructions(order.getSpecialInstructions())
-                .placedAt(order.getPlacedAt())
-                .updatedAt(order.getUpdatedAt())
-                .items(order.getOrderItems().stream().map(this::mapToOrderItemResponse).toList())
+                .id(o.getId())
+                .userId(o.getUser().getId())
+                .userName(o.getUser().getName())
+                .restaurantId(o.getRestaurant().getId())
+                .restaurantName(o.getRestaurant().getName())
+                .deliveryAgentId(o.getDeliveryAgent() != null
+                        ? o.getDeliveryAgent().getId() : null)
+                .deliveryAgentName(o.getDeliveryAgent() != null
+                        ? o.getDeliveryAgent().getName() : null)
+                .deliveryAddress(o.getDeliveryAddress())
+                .status(o.getStatus())
+                .subtotal(o.getSubtotal())
+                .deliveryFee(o.getDeliveryFee())
+                .tax(o.getTax())
+                .totalAmount(o.getTotalAmount())
+                .specialInstructions(o.getSpecialInstructions())
+                .placedAt(o.getPlacedAt())
+                .updatedAt(o.getUpdatedAt())
+                .items(o.getOrderItems() != null
+                        ? o.getOrderItems().stream().map(this::toItemResponse).toList()
+                        : List.of())
+                .payment(o.getPayment() != null ? toPaymentResponse(o.getPayment()) : null)
                 .build();
     }
 
-    private OrderItemResponse mapToOrderItemResponse(OrderItem orderItem) {
+    private OrderItemResponse toItemResponse(OrderItem oi) {
         return OrderItemResponse.builder()
-                .id(orderItem.getId())
-                .foodItemId(orderItem.getFoodItem().getId())
-                .foodItemName(orderItem.getFoodItem().getName())
-                .imageUrl(orderItem.getFoodItem().getImageUrl())
-                .quantity(orderItem.getQuantity())
-                .unitPrice(orderItem.getUnitPrice())
-                .subtotal(orderItem.getSubtotal())
+                .id(oi.getId())
+                .foodItemId(oi.getFoodItem().getId())
+                .foodItemName(oi.getFoodItem().getName())
+                .imageUrl(oi.getFoodItem().getImageUrl())
+                .quantity(oi.getQuantity())
+                .unitPrice(oi.getUnitPrice())
+                .subtotal(oi.getSubtotal())
+                .build();
+    }
+
+    private PaymentResponse toPaymentResponse(Payment p) {
+        return PaymentResponse.builder()
+                .id(p.getId())
+                .orderId(p.getOrder().getId())
+                .amount(p.getAmount())
+                .paymentMethod(p.getPaymentMethod())
+                .status(p.getStatus())
+                .transactionId(p.getTransactionId())
+                .paidAt(p.getPaidAt())
+                .createdAt(p.getCreatedAt())
                 .build();
     }
 }
