@@ -1,50 +1,51 @@
-import React from 'react'
 import RestaurantCard from './RestaurantCard'
-import Loader from '../common/Loader'
+
+const SkeletonCard = () => (
+  <div className="glass-white overflow-hidden animate-pulse">
+    <div className="w-full h-48 bg-sky-100/80 shimmer" />
+    <div className="p-4 space-y-3">
+      <div className="flex justify-between">
+        <div className="h-5 bg-sky-100/80 rounded-lg w-3/5 shimmer" />
+        <div className="h-5 bg-sky-100/80 rounded-lg w-12 shimmer" />
+      </div>
+      <div className="h-4 bg-sky-100/80 rounded-lg w-2/5 shimmer" />
+      <div className="h-px bg-sky-100/60" />
+      <div className="h-4 bg-sky-100/80 rounded-lg w-3/4 shimmer" />
+    </div>
+  </div>
+)
 
 const RestaurantList = ({ restaurants = [], loading = false, error = null }) => {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div
-            key={i}
-            className="bg-white rounded-xl overflow-hidden card-shadow animate-pulse h-80"
-          >
-            <div className="w-full h-48 bg-gray-200" />
-            <div className="p-5 space-y-3">
-              <div className="h-5 bg-gray-200 rounded w-3/4" />
-              <div className="h-4 bg-gray-200 rounded w-1/2" />
-            </div>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="text-center py-12 bg-red-50 rounded-xl p-6">
-        <p className="text-red-600 font-semibold mb-2">Error loading restaurants</p>
-        <p className="text-gray-600 text-sm">{error}</p>
+      <div className="glass-white border border-red-200/60 p-8 text-center">
+        <p className="text-red-500 font-semibold mb-1">Failed to load restaurants</p>
+        <p className="text-slate-500 text-sm">{error}</p>
       </div>
     )
   }
 
-  if (!restaurants || restaurants.length === 0) {
+  if (!restaurants.length) {
     return (
-      <div className="text-center py-12 bg-gray-50 rounded-xl p-8">
-        <h3 className="text-xl font-bold text-gray-700 mb-2">No restaurants found</h3>
-        <p className="text-gray-500">Try adjusting your category or search query.</p>
+      <div className="glass-white p-12 text-center">
+        <div className="text-5xl mb-4">🍽️</div>
+        <h3 className="text-xl font-bold text-slate-700 mb-2">No restaurants found</h3>
+        <p className="text-slate-400 text-sm">Try adjusting your search or filter.</p>
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-      {restaurants.map((restaurant) => (
-        <RestaurantCard key={restaurant.id} restaurant={restaurant} />
-      ))}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {restaurants.map(r => <RestaurantCard key={r.id} restaurant={r} />)}
     </div>
   )
 }

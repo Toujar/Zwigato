@@ -1,29 +1,44 @@
-// login(email, password)   -> POST /api/auth/login
-// register(data)           -> POST /api/auth/register
-// logout()                 -> clears token from localStorage
-// refreshToken()           -> POST /api/auth/refresh-token
-
+/**
+ * Auth Service
+ *
+ * POST /auth/register  → { accessToken, tokenType, expiresIn, user }
+ * POST /auth/login     → { accessToken, tokenType, expiresIn, user }
+ * POST /auth/refresh-token (header: Refresh-Token)
+ *
+ * The api interceptor unwraps ApiResponse.data automatically,
+ * so these methods receive AuthResponse directly.
+ */
 import api from './api'
 
 const authService = {
-  login: async (email, password) => {
-    const response = await api.post('/auth/login', { email, password })
-    return response.data
-  },
-
+  /**
+   * Register a new CUSTOMER account.
+   * @param {{ name, email, password, phone, address? }} data
+   * @returns {Promise<AuthResponse>} { accessToken, user, ... }
+   */
   register: async (data) => {
-    const response = await api.post('/auth/register', data)
-    return response.data
+    return api.post('/auth/register', data)
   },
 
-  logout: () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+  /**
+   * Login with email + password.
+   * @param {string} email
+   * @param {string} password
+   * @returns {Promise<AuthResponse>}
+   */
+  login: async (email, password) => {
+    return api.post('/auth/login', { email, password })
   },
 
-  refreshToken: async () => {
-    const response = await api.post('/auth/refresh-token')
-    return response.data
+  /**
+   * Refresh an expired access token using the stored refresh token.
+   * @param {string} refreshToken
+   * @returns {Promise<AuthResponse>}
+   */
+  refreshToken: async (refreshToken) => {
+    return api.post('/auth/refresh-token', null, {
+      headers: { 'Refresh-Token': refreshToken },
+    })
   },
 }
 

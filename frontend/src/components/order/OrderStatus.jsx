@@ -1,72 +1,58 @@
-import React from 'react'
+const STEPS = [
+  { key: 'PLACED',           label: 'Order Placed',    icon: '📝' },
+  { key: 'CONFIRMED',        label: 'Confirmed',       icon: '✅' },
+  { key: 'PREPARING',        label: 'Preparing',       icon: '👨‍🍳' },
+  { key: 'OUT_FOR_DELIVERY', label: 'Out for Delivery',icon: '🛵' },
+  { key: 'DELIVERED',        label: 'Delivered',       icon: '🎉' },
+]
+const ORDER = STEPS.map(s => s.key)
 
 const OrderStatus = ({ currentStatus = 'PLACED' }) => {
-  const steps = [
-    { key: 'PLACED', title: 'Order Placed' },
-    { key: 'CONFIRMED', title: 'Confirmed' },
-    { key: 'PREPARING', title: 'Preparing' },
-    { key: 'OUT_FOR_DELIVERY', title: 'Out for Delivery' },
-    { key: 'DELIVERED', title: 'Delivered' },
-  ]
+  const upper = currentStatus?.toUpperCase()
 
-  const statusOrder = ['PLACED', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED']
-  const currentIdx = statusOrder.indexOf(currentStatus?.toUpperCase())
-
-  if (currentStatus?.toUpperCase() === 'CANCELLED') {
+  if (upper === 'CANCELLED') {
     return (
-      <div className="bg-red-50 text-red-700 p-6 rounded-xl text-center border border-red-200">
-        <h3 className="text-xl font-bold mb-2">Order Cancelled</h3>
-        <p className="text-sm">This order has been cancelled.</p>
+      <div className="glass-white border border-red-200/50 p-6 text-center">
+        <div className="text-4xl mb-3">❌</div>
+        <h3 className="text-lg font-bold text-red-600 mb-1">Order Cancelled</h3>
+        <p className="text-slate-400 text-sm">This order has been cancelled.</p>
       </div>
     )
   }
 
-  return (
-    <div className="py-6">
-      <div className="relative flex flex-col md:flex-row justify-between items-center gap-6 md:gap-0">
-        {steps.map((step, index) => {
-          const isCompleted = index <= (currentIdx >= 0 ? currentIdx : 0)
-          const isCurrent = index === currentIdx
+  const currentIdx = ORDER.indexOf(upper)
 
+  return (
+    <div className="relative">
+      {/* Progress line */}
+      <div className="hidden md:block absolute top-6 left-[10%] right-[10%] h-0.5"
+        style={{ background: 'rgba(186,230,253,0.40)' }} />
+      <div className="hidden md:block absolute top-6 h-0.5 transition-all duration-700"
+        style={{
+          left: '10%',
+          width: `${(currentIdx / (STEPS.length - 1)) * 80}%`,
+          background: 'linear-gradient(90deg,#0EA5E9,#38BDF8)',
+        }} />
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 relative z-10">
+        {STEPS.map((step, i) => {
+          const done    = i <= currentIdx
+          const current = i === currentIdx
           return (
-            <div
-              key={step.key}
-              className="flex md:flex-col items-center w-full md:w-auto z-10"
-            >
-              <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center font-bold transition-colors ${
-                  isCurrent
-                    ? 'bg-primary text-white ring-4 ring-orange-100 animate-pulse'
-                    : isCompleted
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 text-gray-500'
-                }`}
-              >
-                {isCompleted ? (
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2.5}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                ) : (
-                  index + 1
-                )}
+            <div key={step.key} className="flex md:flex-col items-center gap-3 md:gap-2 md:w-1/5">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl
+                               font-bold transition-all duration-500 shrink-0 ${
+                current ? 'shadow-float scale-110 animate-pulse' : ''
+              }`}
+                style={done
+                  ? { background: 'linear-gradient(135deg,#0EA5E9,#38BDF8)', boxShadow: current ? '0 4px 16px rgba(14,165,233,0.45)' : undefined }
+                  : { background: 'rgba(186,230,253,0.35)', border: '1.5px solid rgba(186,230,253,0.60)' }
+                }>
+                <span className={done ? 'text-white' : 'opacity-40'}>{step.icon}</span>
               </div>
-              <p
-                className={`ml-4 md:ml-0 md:mt-3 text-sm font-semibold text-center ${
-                  isCompleted ? 'text-secondary' : 'text-gray-400'
-                }`}
-              >
-                {step.title}
-              </p>
+              <p className={`text-xs font-semibold text-center transition-colors md:mt-1 ${
+                done ? 'text-primary' : 'text-slate-400'
+              }`}>{step.label}</p>
             </div>
           )
         })}

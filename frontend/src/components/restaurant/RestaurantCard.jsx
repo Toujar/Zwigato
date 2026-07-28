@@ -1,84 +1,57 @@
-import React from 'react'
 import { Link } from 'react-router-dom'
 
 const RestaurantCard = ({ restaurant }) => {
-  const {
-    id,
-    name,
-    cuisine,
-    rating = 4.5,
-    deliveryTime = '30-45 mins',
-    deliveryFee = 40,
-    isOpen = true,
-    image,
-    imageUrl,
-  } = restaurant
+  const { id, name, cuisine, rating = 4.5, deliveryTime = '30-45 mins',
+          deliveryFee = 40, isOpen = true, image, imageUrl } = restaurant
 
-  const displayImage =
-    imageUrl ||
-    image ||
+  const src = imageUrl || image ||
     'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400&h=300&fit=crop'
 
   return (
-    <Link
-      to={`/restaurant/${id}`}
-      className="bg-white rounded-xl overflow-hidden card-shadow card-hover block h-full flex flex-col justify-between"
-    >
-      <div>
-        <div className="relative">
-          <img
-            src={displayImage}
-            alt={name}
-            className="w-full h-48 object-cover"
-          />
-          <div
-            className={`absolute top-4 right-4 text-white px-3 py-1 rounded-full text-xs font-semibold ${
-              isOpen ? 'bg-green-500' : 'bg-red-500'
-            }`}
-          >
-            {isOpen ? 'Open' : 'Closed'}
-          </div>
-        </div>
+    <Link to={`/restaurant/${id}`}
+      className="group block glass-white hover:shadow-glass-lg transition-all duration-300
+                 hover:-translate-y-1 overflow-hidden h-full flex flex-col">
 
-        <div className="p-5">
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-xl font-bold text-secondary truncate">{name}</h3>
-            <div className="flex items-center bg-green-100 text-green-700 px-2 py-1 rounded text-sm font-semibold ml-2 shrink-0">
-              <svg
-                className="w-4 h-4 mr-1 fill-current text-green-600"
-                viewBox="0 0 20 20"
-              >
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-              {rating}
-            </div>
-          </div>
+      {/* Image */}
+      <div className="relative overflow-hidden rounded-t-[20px]">
+        <img src={src} alt={name}
+          className="w-full h-48 object-cover transition-transform duration-500 group-hover:scale-105"
+          loading="lazy" />
 
-          <p className="text-gray-500 text-sm mb-3 truncate">
-            {cuisine || 'Multi-Cuisine'}
-          </p>
-        </div>
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+
+        {/* Open/closed badge */}
+        <span className={`absolute top-3 right-3 badge ${isOpen ? 'badge-green' : 'badge-red'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
+          {isOpen ? 'Open' : 'Closed'}
+        </span>
       </div>
 
-      <div className="px-5 pb-5 pt-0 flex items-center space-x-4 text-gray-600 text-sm border-t border-gray-50 mt-auto">
-        <span className="flex items-center">
-          <svg
-            className="w-4 h-4 mr-1"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          {deliveryTime}
-        </span>
-        <span>•</span>
-        <span>₹{deliveryFee} delivery</span>
+      {/* Info */}
+      <div className="p-4 flex-1 flex flex-col justify-between">
+        <div>
+          <div className="flex justify-between items-start gap-2 mb-1">
+            <h3 className="text-lg font-bold text-slate-800 leading-tight line-clamp-1">{name}</h3>
+            <span className="flex items-center gap-1 badge badge-green shrink-0">
+              ★ {rating}
+            </span>
+          </div>
+          <p className="text-slate-500 text-sm line-clamp-1">{cuisine || 'Multi-Cuisine'}</p>
+        </div>
+
+        <div className="flex items-center gap-3 mt-3 pt-3 text-sm text-slate-500"
+          style={{ borderTop: '1px solid rgba(186,230,253,0.45)' }}>
+          <span className="flex items-center gap-1">
+            <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {deliveryTime}
+          </span>
+          <span className="text-sky-200">•</span>
+          <span>₹{deliveryFee} delivery</span>
+        </div>
       </div>
     </Link>
   )

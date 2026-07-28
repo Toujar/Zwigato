@@ -1,23 +1,40 @@
-// initiate(data)         -> POST /api/payments/initiate
-// confirm(txnId)         -> POST /api/payments/confirm
-// getByOrder(orderId)    -> GET /api/payments/:orderId
-
+/**
+ * Payment Service
+ *
+ * Matches the backend PaymentController:
+ *   POST /payments/initiate              → PaymentResponse  (CUSTOMER)
+ *   POST /payments/confirm/:transactionId→ PaymentResponse  (ADMIN/gateway)
+ *   GET  /payments/order/:orderId        → PaymentResponse  (CUSTOMER/ADMIN)
+ */
 import api from './api'
 
 const paymentService = {
+  /**
+   * Initiate a payment for an order (CUSTOMER only).
+   * Creates a PENDING payment record.
+   * @param {{ orderId: number, paymentMethod: string }} data
+   * @returns {Promise<PaymentResponse>}
+   */
   initiate: async (data) => {
-    const response = await api.post('/payments/initiate', data)
-    return response.data
+    return api.post('/payments/initiate', data)
   },
 
-  confirm: async (txnId) => {
-    const response = await api.post('/payments/confirm', { transactionId: txnId })
-    return response.data
+  /**
+   * Confirm a payment via gateway transaction ID (ADMIN / webhook).
+   * @param {string} transactionId
+   * @returns {Promise<PaymentResponse>}
+   */
+  confirm: async (transactionId) => {
+    return api.post(`/payments/confirm/${transactionId}`)
   },
 
+  /**
+   * Get the payment record for a specific order.
+   * @param {string|number} orderId
+   * @returns {Promise<PaymentResponse>}
+   */
   getByOrder: async (orderId) => {
-    const response = await api.get(`/payments/${orderId}`)
-    return response.data
+    return api.get(`/payments/order/${orderId}`)
   },
 }
 

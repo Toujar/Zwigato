@@ -1,55 +1,48 @@
-
-const Footer = () => {
-  return (
-    <footer className="bg-dark text-white py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div className="md:col-span-1">
-            <div className="flex items-center space-x-2 mb-4">
-              <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
-                <span className="text-white font-bold text-xl">Z</span>
-              </div>
-              <span className="text-2xl font-bold text-white">Zwigato</span>
+const Footer = () => (
+  <footer className="mt-20 glass-dark">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div className="col-span-2 md:col-span-1">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-9 h-9 rounded-2xl flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg,#0EA5E9,#38BDF8)' }}>
+              <span className="text-white font-black text-base">Z</span>
             </div>
-            <p className="text-gray-400 text-sm">
-              Delicious food delivered to your doorstep.
-            </p>
+            <span className="text-xl font-black text-white">Zwigato</span>
           </div>
-
-          <div>
-            <h4 className="font-semibold text-lg mb-4">Company</h4>
-            <ul className="space-y-2 text-gray-400 text-sm">
-              <li><a href="#" className="hover:text-white transition-colors">About</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-lg mb-4">Support</h4>
-            <ul className="space-y-2 text-gray-400 text-sm">
-              <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">FAQ</a></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-lg mb-4">Legal</h4>
-            <ul className="space-y-2 text-gray-400 text-sm">
-              <li><a href="#" className="hover:text-white transition-colors">Terms of Service</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Privacy Policy</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Cookie Policy</a></li>
-            </ul>
-          </div>
+          <p className="text-sky-200/55 text-sm leading-relaxed">
+            Delicious food delivered fast. Order from the best restaurants near you.
+          </p>
         </div>
-
-        <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-500 text-sm">
-          <p>© 2025 Zwigato. All rights reserved.</p>
+        {[
+          { title: 'Company', links: ['About Us','Careers','Blog','Press'] },
+          { title: 'Support', links: ['Help Center','Contact Us','Safety','FAQ'] },
+          { title: 'Legal',   links: ['Privacy Policy','Terms of Service','Cookie Policy','Refunds'] },
+        ].map(({ title, links }) => (
+          <div key={title}>
+            <h4 className="text-white font-semibold mb-4 text-xs uppercase tracking-widest opacity-60">{title}</h4>
+            <ul className="space-y-2">
+              {links.map(l => (
+                <li key={l}>
+                  <a href="#" className="text-sky-200/45 text-sm hover:text-sky-300 transition-colors">{l}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="mt-10 pt-6" style={{ borderTop: '1px solid rgba(186,230,253,0.12)' }}>
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+          <p className="text-sky-200/30 text-sm">© 2025 Zwigato. All rights reserved.</p>
+          <div className="flex gap-4 text-xl">
+            {['🍕','🍔','🍣','🌮','🍜'].map((e,i) => (
+              <span key={i} className="hover:scale-125 transition-transform cursor-default select-none">{e}</span>
+            ))}
+          </div>
         </div>
       </div>
-    </footer>
-  )
-}
+    </div>
+  </footer>
+)
 
 export default Footer
