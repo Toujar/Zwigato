@@ -16,6 +16,12 @@ import OrderSuccess from '../pages/OrderSuccess'
 import Profile from '../pages/Profile'
 import NotFound from '../pages/NotFound'
 
+// Owner pages
+import OwnerOverview from '../pages/owner/OwnerOverview'
+import OwnerRestaurants from '../pages/owner/OwnerRestaurants'
+import OwnerMenuManager from '../pages/owner/OwnerMenuManager'
+import OwnerOrders from '../pages/owner/OwnerOrders'
+
 const AppRoutes = () => {
   return (
     <Routes>
@@ -76,7 +82,7 @@ const AppRoutes = () => {
         <Route path="*" element={<NotFound />} />
       </Route>
 
-      {/* Admin / Owner Dashboard Shell */}
+      {/* Owner / Admin Dashboard */}
       <Route
         path="dashboard"
         element={
@@ -85,9 +91,10 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       >
-        <Route index element={<div className="text-2xl font-bold text-secondary">Dashboard Overview</div>} />
-        <Route path="restaurants" element={<div className="text-2xl font-bold text-secondary">Manage Restaurants</div>} />
-        <Route path="orders" element={<div className="text-2xl font-bold text-secondary">Manage Orders</div>} />
+        <Route index element={<OwnerOverview />} />
+        <Route path="restaurants" element={<OwnerRestaurants />} />
+        <Route path="menu/:restaurantId" element={<OwnerMenuManager />} />
+        <Route path="orders" element={<OwnerOrders />} />
       </Route>
     </Routes>
   )

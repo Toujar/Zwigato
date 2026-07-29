@@ -30,17 +30,20 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  *
  *  PUBLIC (no JWT required)
  *  ─────────────────────────────────────────────────────────
- *   POST   /api/auth/register
- *   POST   /api/auth/login
- *   POST   /api/auth/refresh-token
- *   GET    /api/restaurants          (browse restaurants)
- *   GET    /api/restaurants/{id}     (restaurant detail)
- *   GET    /api/categories           (category filter chips)
- *   GET    /api/categories/{id}      (single category)
- *   GET    /api/food-items/restaurant/{id}  (public menu)
- *   GET    /api/food-items/{id}      (single item detail)
- *   GET    /v3/api-docs/**           (OpenAPI spec)
- *   GET    /swagger-ui/**            (Swagger UI)
+ *  NOTE: Paths here are relative to the servlet context (/api),
+ *  so Spring Security sees them WITHOUT the /api prefix.
+ *
+ *   POST   /auth/register
+ *   POST   /auth/login
+ *   POST   /auth/refresh-token
+ *   GET    /restaurants          (browse restaurants)
+ *   GET    /restaurants/{id}     (restaurant detail)
+ *   GET    /categories           (category filter chips)
+ *   GET    /categories/{id}      (single category)
+ *   GET    /food-items/restaurant/{id}  (public menu)
+ *   GET    /food-items/{id}      (single item detail)
+ *   GET    /v3/api-docs/**       (OpenAPI spec)
+ *   GET    /swagger-ui/**        (Swagger UI)
  *   GET    /swagger-ui.html
  *
  *  AUTHENTICATED (valid JWT required — role refined by @PreAuthorize)
@@ -90,24 +93,21 @@ public class SecurityConfig {
                 ).permitAll()
 
                 // ---------- Auth endpoints (no token needed) ----------
-                .requestMatchers("/api/auth/**").permitAll()
+                // NOTE: Spring Security matches against the path AFTER the
+                // context-path (/api) is stripped, so use paths without /api prefix.
+                .requestMatchers("/auth/**").permitAll()
 
                 // ---------- Public read — Restaurants -----------------
-                // Customers (and anonymous visitors) must be able to
-                // browse restaurants without logging in (like Swiggy).
-                .requestMatchers(HttpMethod.GET, "/api/restaurants").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/restaurants/{id}").permitAll()
+                .requestMatchers(HttpMethod.GET, "/restaurants").permitAll()
+                .requestMatchers(HttpMethod.GET, "/restaurants/{id}").permitAll()
 
                 // ---------- Public read — Categories ------------------
-                // Category chips on the home page are shown to everyone.
-                .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/categories/{id}").permitAll()
+                .requestMatchers(HttpMethod.GET, "/categories").permitAll()
+                .requestMatchers(HttpMethod.GET, "/categories/{id}").permitAll()
 
                 // ---------- Public read — Food Items (Menu) -----------
-                // Restaurant menu page loads without login.
-                .requestMatchers(HttpMethod.GET,
-                    "/api/food-items/restaurant/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/food-items/{id}").permitAll()
+                .requestMatchers(HttpMethod.GET, "/food-items/restaurant/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/food-items/{id}").permitAll()
 
                 // ---------- Everything else — require authentication ---
                 .anyRequest().authenticated()

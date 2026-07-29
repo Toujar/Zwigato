@@ -48,6 +48,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     // 1. Customer Order History
     // ----------------------------------------------------------
 
+    /** Find all active (non-terminal) orders — used by the auto-advance scheduler. */
+    List<Order> findByStatusIn(List<OrderStatus> statuses);
+
     /**
      * Returns a paginated list of orders placed by a specific user,
      * sorted by placement time descending (newest first).
@@ -287,15 +290,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
           AND o.status = com.fooddelivery.entity.enums.OrderStatus.DELIVERED
         """)
     BigDecimal calculateRevenueByRestaurant(@Param("restaurantId") Long restaurantId);
-
-    /**
-     * Counts total delivered orders for a restaurant.
-     *
-     * Used by: Restaurant owner dashboard — "Orders completed: 1,204".
-     *
-     * SQL: SELECT COUNT(*) FROM orders WHERE restaurant_id = ? AND status = 'DELIVERED'
-     */
-    long countByRestaurant_IdAndStatus(Long restaurantId, OrderStatus status);
 
     /**
      * Counts total orders placed by a specific customer.
