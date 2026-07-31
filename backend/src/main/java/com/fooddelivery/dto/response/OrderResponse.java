@@ -19,6 +19,7 @@ public class OrderResponse {
     private String                  userName;
     private Long                    restaurantId;
     private String                  restaurantName;
+    private String                  restaurantAddress;   // full address for map routing
     private Long                    deliveryAgentId;
     private String                  deliveryAgentName;
     private String                  deliveryAddress;

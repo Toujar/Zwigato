@@ -314,6 +314,7 @@ public class OrderServiceImpl implements OrderService {
                 .userName(o.getUser().getName())
                 .restaurantId(o.getRestaurant().getId())
                 .restaurantName(o.getRestaurant().getName())
+                .restaurantAddress(o.getRestaurant().getAddress() + ", " + o.getRestaurant().getCity())
                 .deliveryAgentId(o.getDeliveryAgent() != null
                         ? o.getDeliveryAgent().getId() : null)
                 .deliveryAgentName(o.getDeliveryAgent() != null

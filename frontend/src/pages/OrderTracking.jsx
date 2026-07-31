@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import orderService from '../services/orderService'
 import OrderStatus from '../components/order/OrderStatus'
 import Loader from '../components/common/Loader'
+
+const DeliveryMap = lazy(() => import('../components/maps/DeliveryMap'))
 
 // The pipeline every active order flows through
 const STATUS_PIPELINE = [
@@ -187,6 +189,27 @@ const OrderTracking = () => {
           </div>
         )}
       </div>
+
+      {/* ── Delivery Route Map ── */}
+      {order.restaurantAddress && order.deliveryAddress && (
+        <div className="glass p-5 mb-5">
+          <h3 className="font-bold text-secondary mb-3 flex items-center gap-2">
+            🗺️ Delivery Route
+          </h3>
+          <Suspense fallback={
+            <div className="glass-subtle rounded-2xl h-64 flex items-center justify-center">
+              <Loader size="sm" />
+            </div>
+          }>
+            <DeliveryMap
+              restaurantAddress={order.restaurantAddress}
+              deliveryAddress={order.deliveryAddress}
+              restaurantName={order.restaurantName}
+              height="320px"
+            />
+          </Suspense>
+        </div>
+      )}
 
       {/* Details grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
