@@ -120,6 +120,21 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- ── Redis + Spring Cache ──────────────────────────────── -->
+        <!--
+            spring-boot-starter-data-redis : Lettuce async client + Spring Data Redis
+            spring-boot-starter-cache      : @EnableCaching + CacheManager abstraction
+            Versions managed by Spring Boot BOM — NOT pinned manually.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

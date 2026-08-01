@@ -1,5 +1,6 @@
 package com.fooddelivery.service.impl;
 
+import com.fooddelivery.config.CacheConstants;
 import com.fooddelivery.dto.request.RestaurantRequest;
 import com.fooddelivery.dto.response.RestaurantResponse;
 import com.fooddelivery.entity.Restaurant;
@@ -13,6 +14,10 @@ import com.fooddelivery.service.RestaurantService;
 import com.fooddelivery.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -40,6 +45,8 @@ public class RestaurantServiceImpl implements RestaurantService {
     // Browse (public)
     // ---------------------------------------------------------------
 
+    // Paginated list intentionally NOT cached — the page/size/sort
+    // combinations create an unbounded key space. Cache only by ID.
     @Override
     @Transactional(readOnly = true)
     public Page<RestaurantResponse> getAllRestaurants(Pageable pageable) {
@@ -56,8 +63,14 @@ public class RestaurantServiceImpl implements RestaurantService {
                 .map(this::toResponse);
     }
 
+    /**
+     * Cache individual restaurant by ID.
+     * Key: zwigato:restaurants::<id>
+     * TTL: 10 minutes (configured in RedisConfig / CacheConstants).
+     */
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConstants.RESTAURANTS, key = "#id")
     public RestaurantResponse getRestaurantById(Long id) {
         return toResponse(findById(id));
     }
@@ -66,6 +79,10 @@ public class RestaurantServiceImpl implements RestaurantService {
     // Create
     // ---------------------------------------------------------------
 
+    /**
+     * No caching on create — there is no existing entry to update.
+     * The next getRestaurantById() for the new ID will populate the cache.
+     */
     @Override
     @Transactional
     public RestaurantResponse createRestaurant(RestaurantRequest request) {
@@ -112,8 +129,14 @@ public class RestaurantServiceImpl implements RestaurantService {
     // Update
     // ---------------------------------------------------------------
 
+    /**
+     * @CachePut writes the fresh response back into the cache under the same
+     * key so subsequent reads get the updated data without hitting the DB.
+     * key = "#id" matches the key used in @Cacheable above.
+     */
     @Override
     @Transactional
+    @CachePut(value = CacheConstants.RESTAURANTS, key = "#id")
     public RestaurantResponse updateRestaurant(Long id, RestaurantRequest request) {
         Restaurant restaurant = findById(id);
         User currentUser = securityUtils.getCurrentUser();
@@ -150,8 +173,13 @@ public class RestaurantServiceImpl implements RestaurantService {
     // Soft-delete
     // ---------------------------------------------------------------
 
+    /**
+     * Evict the cached entry — a deactivated restaurant must not be
+     * served from cache to customers.
+     */
     @Override
     @Transactional
+    @CacheEvict(value = CacheConstants.RESTAURANTS, key = "#id")
     public void deleteRestaurant(Long id) {
         Restaurant restaurant = findById(id);
         User currentUser = securityUtils.getCurrentUser();
@@ -171,8 +199,14 @@ public class RestaurantServiceImpl implements RestaurantService {
     // Toggle open/closed
     // ---------------------------------------------------------------
 
+    /**
+     * isOpen changes — the cached entry is now stale.
+     * @CachePut refreshes it in place so customers see the new open/closed
+     * state immediately without waiting for TTL expiry.
+     */
     @Override
     @Transactional
+    @CachePut(value = CacheConstants.RESTAURANTS, key = "#id")
     public RestaurantResponse toggleOpen(Long id) {
         Restaurant restaurant = findById(id);
         User currentUser = securityUtils.getCurrentUser();

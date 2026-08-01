@@ -1,5 +1,6 @@
 package com.fooddelivery.service.impl;
 
+import com.fooddelivery.config.CacheConstants;
 import com.fooddelivery.dto.request.CategoryRequest;
 import com.fooddelivery.dto.response.CategoryResponse;
 import com.fooddelivery.entity.Category;
@@ -9,6 +10,10 @@ import com.fooddelivery.repository.CategoryRepository;
 import com.fooddelivery.service.CategoryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,8 +39,13 @@ public class CategoryServiceImpl implements CategoryService {
     // Read
     // ---------------------------------------------------------------
 
+    /**
+     * Cache the full active list under a fixed key "allActive".
+     * The list rarely changes, so a 30-min TTL (set in RedisConfig) is fine.
+     */
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConstants.CATEGORIES, key = "'allActive'")
     public List<CategoryResponse> getAllActiveCategories() {
         return categoryRepository.findByIsActiveTrueOrderByNameAsc()
                 .stream()
@@ -43,8 +53,13 @@ public class CategoryServiceImpl implements CategoryService {
                 .toList();
     }
 
+    /**
+     * Cache individual categories by their ID.
+     * Key: zwigato:categories::<id>
+     */
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConstants.CATEGORIES, key = "#id")
     public CategoryResponse getCategoryById(Long id) {
         Category category = findById(id);
         return toResponse(category);
@@ -54,8 +69,13 @@ public class CategoryServiceImpl implements CategoryService {
     // Create
     // ---------------------------------------------------------------
 
+    /**
+     * After creating a new category the "allActive" list is stale.
+     * @CacheEvict removes it so the next GET rebuilds from DB.
+     */
     @Override
     @Transactional
+    @CacheEvict(value = CacheConstants.CATEGORIES, key = "'allActive'")
     public CategoryResponse createCategory(CategoryRequest request) {
         if (categoryRepository.existsByNameIgnoreCase(request.getName())) {
             throw new BadRequestException(
@@ -78,8 +98,19 @@ public class CategoryServiceImpl implements CategoryService {
     // Update
     // ---------------------------------------------------------------
 
+    /**
+     * @Caching groups two operations atomically:
+     *   1. @CachePut  — writes the updated category back under its ID key
+     *                   so a subsequent getCategoryById() hits cache, not DB.
+     *   2. @CacheEvict — nukes the "allActive" list because the category
+     *                   name/image may have changed.
+     */
     @Override
     @Transactional
+    @Caching(
+        put    = { @CachePut(value = CacheConstants.CATEGORIES, key = "#id") },
+        evict  = { @CacheEvict(value = CacheConstants.CATEGORIES, key = "'allActive'") }
+    )
     public CategoryResponse updateCategory(Long id, CategoryRequest request) {
         Category category = findById(id);
 
@@ -103,8 +134,17 @@ public class CategoryServiceImpl implements CategoryService {
     // Delete (soft)
     // ---------------------------------------------------------------
 
+    /**
+     * Soft-delete evicts BOTH:
+     *   - The individual entry for this ID
+     *   - The "allActive" list (category disappears from the list)
+     */
     @Override
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = CacheConstants.CATEGORIES, key = "#id"),
+        @CacheEvict(value = CacheConstants.CATEGORIES, key = "'allActive'")
+    })
     public void deleteCategory(Long id) {
         Category category = findById(id);
 

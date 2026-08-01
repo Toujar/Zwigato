@@ -1,5 +1,6 @@
 package com.fooddelivery.service.impl;
 
+import com.fooddelivery.config.CacheConstants;
 import com.fooddelivery.dto.request.FoodItemRequest;
 import com.fooddelivery.dto.response.FoodItemResponse;
 import com.fooddelivery.entity.Category;
@@ -18,54 +19,92 @@ import com.fooddelivery.service.FoodItemService;
 import com.fooddelivery.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 /**
- * Manages the food item (menu) layer.
+ * ============================================================
+ *  FoodItemServiceImpl — with Redis caching
+ * ============================================================
  *
- * Key decisions:
- *  - getMenuByRestaurant()  returns only available items (customer view).
- *  - getFoodItemById()      returns any item including unavailable ones
- *                           so owners can see the full state.
- *  - deleteFoodItem()       removes the item from all active carts first
- *                           to prevent stale cart references at checkout.
- *  - toggleAvailability()   is the recommended way to hide/show items
- *                           because it preserves order history references.
+ *  Cache design for food items:
+ *
+ *  Two key spaces inside the "foodItems" cache:
+ *    1. Single item   → key = item id          (e.g. 42)
+ *    2. Restaurant menu → key = "menu_" + restaurantId (e.g. menu_7)
+ *
+ *  The "menu_" prefix prevents collision between item IDs and
+ *  restaurant IDs (both are Longs).
+ *
+ *  Eviction rules:
+ *    CREATE  → evict menu_<restaurantId>   (list is now stale)
+ *    UPDATE  → put single item + evict menu_<restaurantId>
+ *    DELETE  → evict single item + evict menu_<restaurantId>
+ *    TOGGLE  → put single item + evict menu_<restaurantId>
+ *
+ *  Why CacheManager for deleteFoodItem()?
+ *  ─────────────────────────────────────
+ *  @CacheEvict on a void method cannot reference #result (no result).
+ *  When we need to evict TWO keys — item id AND menu_<restaurantId> —
+ *  and the restaurantId is only known at runtime (after loading the entity),
+ *  the cleanest solution is to call CacheManager.getCache().evict() directly
+ *  after the DB delete succeeds. This avoids self-invocation hacks and is
+ *  fully testable.
+ * ============================================================
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class FoodItemServiceImpl implements FoodItemService {
 
-    private final FoodItemRepository    foodItemRepository;
-    private final RestaurantRepository  restaurantRepository;
-    private final CategoryRepository    categoryRepository;
-    private final CartItemRepository    cartItemRepository;
-    private final SecurityUtils         securityUtils;
+    private final FoodItemRepository   foodItemRepository;
+    private final RestaurantRepository restaurantRepository;
+    private final CategoryRepository   categoryRepository;
+    private final CartItemRepository   cartItemRepository;
+    private final SecurityUtils        securityUtils;
+
+    // Injected to perform programmatic cache eviction in deleteFoodItem()
+    private final CacheManager         cacheManager;
 
     // ---------------------------------------------------------------
     // Read
     // ---------------------------------------------------------------
 
+    /**
+     * Cache the full menu for a restaurant keyed by restaurantId.
+     * Key  : zwigato:foodItems::menu_<restaurantId>
+     * TTL  : 10 min (CacheConstants.TTL_FOOD_ITEMS)
+     *
+     * Only available items are cached (customer view).
+     */
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConstants.FOOD_ITEMS, key = "'menu_' + #restaurantId")
     public List<FoodItemResponse> getMenuByRestaurant(Long restaurantId) {
-        // Confirm the restaurant exists (throws 404 if not)
         if (!restaurantRepository.existsById(restaurantId)) {
             throw new ResourceNotFoundException("Restaurant", "id", restaurantId);
         }
         return foodItemRepository
-                .findAvailableWithCategory(restaurantId)   // JOIN FETCH avoids N+1
+                .findAvailableWithCategory(restaurantId)
                 .stream()
                 .map(this::toResponse)
                 .toList();
     }
 
+    /**
+     * Cache a single food item by its ID.
+     * Key: zwigato:foodItems::<id>
+     */
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConstants.FOOD_ITEMS, key = "#id")
     public FoodItemResponse getFoodItemById(Long id) {
         return toResponse(findById(id));
     }
@@ -74,8 +113,16 @@ public class FoodItemServiceImpl implements FoodItemService {
     // Create
     // ---------------------------------------------------------------
 
+    /**
+     * A new item was added → the restaurant's cached menu list is stale.
+     * Evict it so the next GET rebuilds from DB.
+     *
+     * Key resolves before method body via #request.restaurantId —
+     * this is safe because @CacheEvict does not need #result.
+     */
     @Override
     @Transactional
+    @CacheEvict(value = CacheConstants.FOOD_ITEMS, key = "'menu_' + #request.restaurantId")
     public FoodItemResponse createFoodItem(FoodItemRequest request) {
         User currentUser = securityUtils.getCurrentUser();
 
@@ -119,8 +166,26 @@ public class FoodItemServiceImpl implements FoodItemService {
     // Update
     // ---------------------------------------------------------------
 
+    /**
+     * Two cache operations via @Caching:
+     *
+     *   @CachePut  key = #id
+     *     → writes the updated FoodItemResponse into the single-item slot.
+     *       Subsequent getFoodItemById() hits cache, not DB.
+     *
+     *   @CacheEvict key = 'menu_' + #result.restaurantId
+     *     → nukes the restaurant's menu list so the next
+     *       getMenuByRestaurant() reloads fresh data from DB.
+     *     → #result is the FoodItemResponse returned by this method.
+     *       Spring evaluates it AFTER the method returns (default behaviour).
+     */
     @Override
     @Transactional
+    @Caching(
+        put   = { @CachePut(value  = CacheConstants.FOOD_ITEMS, key = "#id") },
+        evict = { @CacheEvict(value = CacheConstants.FOOD_ITEMS,
+                               key  = "'menu_' + #result.restaurantId") }
+    )
     public FoodItemResponse updateFoodItem(Long id, FoodItemRequest request) {
         FoodItem foodItem = findById(id);
         User currentUser = securityUtils.getCurrentUser();
@@ -139,7 +204,6 @@ public class FoodItemServiceImpl implements FoodItemService {
             foodItem.setCategory(category);
         }
 
-        // Apply only non-null fields (partial update)
         if (request.getName()         != null) foodItem.setName(request.getName().trim());
         if (request.getDescription()  != null) foodItem.setDescription(request.getDescription());
         if (request.getPrice()        != null) foodItem.setPrice(request.getPrice());
@@ -155,15 +219,32 @@ public class FoodItemServiceImpl implements FoodItemService {
     // Delete
     // ---------------------------------------------------------------
 
+    /**
+     * Why programmatic eviction instead of @CacheEvict here?
+     * ─────────────────────────────────────────────────────
+     * This is a void method — #result is unavailable in SpEL.
+     * We need two evictions:
+     *   1. Single-item key  = id
+     *   2. Menu-list key    = "menu_" + restaurantId
+     *
+     * restaurantId is only known at runtime (after loading the entity).
+     * @Caching with two @CacheEvict annotations would need either:
+     *   a) beforeInvocation = true (evicts even if method throws — unsafe)
+     *   b) a separate Spring-proxied bean method (overengineered)
+     *
+     * The cleanest production solution: call CacheManager directly after
+     * the DB delete succeeds. This is deterministic, transactional-safe
+     * (eviction happens after TX commits via @Transactional), and testable.
+     */
     @Override
     @Transactional
     public void deleteFoodItem(Long id) {
         FoodItem foodItem = findById(id);
+        Long restaurantId = foodItem.getRestaurant().getId();
         User currentUser = securityUtils.getCurrentUser();
         assertOwnerOrAdmin(foodItem.getRestaurant(), currentUser, "delete");
 
-        // Scrub the item from every active cart before deleting
-        // (prevents "item no longer available" errors at checkout)
+        // Scrub from active carts first (prevents stale checkout)
         int cartItemsRemoved = cartItemRepository.deleteByFoodItem_Id(id);
         if (cartItemsRemoved > 0) {
             log.info("Removed food item {} from {} active cart(s)", id, cartItemsRemoved);
@@ -171,20 +252,45 @@ public class FoodItemServiceImpl implements FoodItemService {
 
         foodItemRepository.delete(foodItem);
         log.info("Food item deleted: {} ({})", foodItem.getName(), id);
+
+        // Programmatic cache eviction — both keys evicted after DB delete
+        var cache = cacheManager.getCache(CacheConstants.FOOD_ITEMS);
+        if (cache != null) {
+            cache.evict(id);                          // single-item key
+            cache.evict("menu_" + restaurantId);      // restaurant menu list
+            log.debug("Cache evicted: foodItems::{} and foodItems::menu_{}",
+                    id, restaurantId);
+        }
     }
 
     // ---------------------------------------------------------------
     // Toggle availability
     // ---------------------------------------------------------------
 
+    /**
+     * isAvailable flipped → both the single-item entry and the menu list
+     * must reflect the new state immediately.
+     *
+     *   @CachePut  key = #id
+     *     → writes the updated response into the single-item slot.
+     *
+     *   @CacheEvict key = 'menu_' + #result.restaurantId
+     *     → nukes the menu list (item appears/disappears from customer view).
+     *     → #result resolves to the returned FoodItemResponse after return.
+     */
     @Override
     @Transactional
+    @Caching(
+        put   = { @CachePut(value  = CacheConstants.FOOD_ITEMS, key = "#id") },
+        evict = { @CacheEvict(value = CacheConstants.FOOD_ITEMS,
+                               key  = "'menu_' + #result.restaurantId") }
+    )
     public FoodItemResponse toggleAvailability(Long id) {
         FoodItem foodItem = findById(id);
         User currentUser = securityUtils.getCurrentUser();
         assertOwnerOrAdmin(foodItem.getRestaurant(), currentUser, "update");
 
-        boolean newState = foodItem.toggleAvailability(); // calls entity helper
+        boolean newState = foodItem.toggleAvailability();
         FoodItem saved = foodItemRepository.save(foodItem);
         log.info("Food item {} availability → {} ({})", saved.getName(), newState, id);
         return toResponse(saved);
