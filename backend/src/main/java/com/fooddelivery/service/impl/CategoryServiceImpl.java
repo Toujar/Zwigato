@@ -47,6 +47,9 @@ public class CategoryServiceImpl implements CategoryService {
     @Transactional(readOnly = true)
     @Cacheable(value = CacheConstants.CATEGORIES, key = "'allActive'")
     public List<CategoryResponse> getAllActiveCategories() {
+        // ── CACHE MISS ── Only hits MySQL on the first call after startup
+        // or after a create/update/delete evicts this key.
+        log.info("[CACHE MISS] Loading all active categories from MySQL");
         return categoryRepository.findByIsActiveTrueOrderByNameAsc()
                 .stream()
                 .map(this::toResponse)
@@ -61,6 +64,8 @@ public class CategoryServiceImpl implements CategoryService {
     @Transactional(readOnly = true)
     @Cacheable(value = CacheConstants.CATEGORIES, key = "#id")
     public CategoryResponse getCategoryById(Long id) {
+        // ── CACHE MISS ── Only prints when this category id is not in Redis.
+        log.info("[CACHE MISS] Loading category from MySQL id={}", id);
         Category category = findById(id);
         return toResponse(category);
     }

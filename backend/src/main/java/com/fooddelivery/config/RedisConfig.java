@@ -92,25 +92,44 @@ public class RedisConfig {
     // ── 2. JSON Serialiser ───────────────────────────────────────────
 
     /**
-     * Builds a Jackson ObjectMapper configured for Redis:
+     * Builds a Jackson ObjectMapper tuned for Redis serialisation.
      *
-     *  - JavaTimeModule          : handles LocalDateTime, Instant etc.
-     *  - WRITE_DATES_AS_TIMESTAMPS false : ISO-8601 strings, not epoch longs
-     *  - activateDefaultTyping   : embeds the Java class name as "@class"
-     *    in every JSON payload so Spring can deserialise back to the
-     *    correct type without needing the caller to specify it.
-     *    LaissezFaireSubTypeValidator allows all types (safe in a
-     *    private internal cache — NOT exposed to user input).
+     *  WHY WRAPPER_ARRAY instead of As.PROPERTY?
+     *  ──────────────────────────────────────────
+     *  As.PROPERTY embeds type info as a field inside the JSON object:
+     *    {"@class":"com.example.Foo", "id":1}
+     *  This works for single objects but FAILS for top-level collections
+     *  (List, ArrayList) because Jackson sees the opening '[' of the array
+     *  BEFORE it can read the type discriminator field — hence the error:
+     *    "Unexpected token START_OBJECT, expected VALUE_STRING"
+     *
+     *  As.WRAPPER_ARRAY wraps EVERY value (object OR collection) as a
+     *  two-element JSON array:
+     *    ["com.example.Foo", {"id":1}]               ← single object
+     *    ["java.util.ArrayList", [{"id":1}, ...]]    ← list
+     *  Jackson reads element[0] as the type, element[1] as the data.
+     *  This works correctly for all types including List<T>.
+     *
+     *  NON_FINAL scope:
+     *    Applies typing to all non-final types (covers our DTOs, List, etc.)
+     *    without touching primitives, String, Boolean which don't need it.
+     *
+     *  LaissezFaireSubTypeValidator:
+     *    Allows any class — safe here because this ObjectMapper is only
+     *    used inside our private Redis cache, never for user-supplied input.
      */
     @Bean
     public GenericJackson2JsonRedisSerializer genericJackson2JsonRedisSerializer() {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        // WRAPPER_ARRAY — the only format that correctly handles
+        // both single objects AND top-level List / Collection values.
         mapper.activateDefaultTyping(
                 LaissezFaireSubTypeValidator.instance,
                 ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.PROPERTY
+                JsonTypeInfo.As.WRAPPER_ARRAY          // ← was PROPERTY, now WRAPPER_ARRAY
         );
         return new GenericJackson2JsonRedisSerializer(mapper);
     }

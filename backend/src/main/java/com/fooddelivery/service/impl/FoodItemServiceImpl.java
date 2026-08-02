@@ -88,6 +88,10 @@ public class FoodItemServiceImpl implements FoodItemService {
     @Transactional(readOnly = true)
     @Cacheable(value = CacheConstants.FOOD_ITEMS, key = "'menu_' + #restaurantId")
     public List<FoodItemResponse> getMenuByRestaurant(Long restaurantId) {
+        // ── CACHE MISS ── This line only prints on the first request.
+        // If you call this endpoint twice and see this log only once,
+        // Redis caching is working correctly.
+        log.info("[CACHE MISS] Loading menu from MySQL for restaurantId={}", restaurantId);
         if (!restaurantRepository.existsById(restaurantId)) {
             throw new ResourceNotFoundException("Restaurant", "id", restaurantId);
         }
@@ -106,6 +110,8 @@ public class FoodItemServiceImpl implements FoodItemService {
     @Transactional(readOnly = true)
     @Cacheable(value = CacheConstants.FOOD_ITEMS, key = "#id")
     public FoodItemResponse getFoodItemById(Long id) {
+        // ── CACHE MISS ── Only prints when the item is not yet in Redis.
+        log.info("[CACHE MISS] Loading food item from MySQL id={}", id);
         return toResponse(findById(id));
     }
 

@@ -93,6 +93,9 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     @Cacheable(value = CacheConstants.USER_PROFILES, key = "#id")
     public UserResponse getUserById(Long id) {
+        // ── CACHE MISS ── Only prints when this user's profile is not in Redis.
+        // After the first hit, subsequent calls return instantly from cache.
+        log.info("[CACHE MISS] Loading user profile from MySQL id={}", id);
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", id));
         return toUserResponse(user);

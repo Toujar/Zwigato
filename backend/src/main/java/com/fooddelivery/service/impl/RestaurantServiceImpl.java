@@ -72,6 +72,9 @@ public class RestaurantServiceImpl implements RestaurantService {
     @Transactional(readOnly = true)
     @Cacheable(value = CacheConstants.RESTAURANTS, key = "#id")
     public RestaurantResponse getRestaurantById(Long id) {
+        // ── CACHE MISS ── Only prints when Redis has no entry for this id.
+        // Call GET /restaurants/{id} twice — you should see this log exactly once.
+        log.info("[CACHE MISS] Loading restaurant from MySQL id={}", id);
         return toResponse(findById(id));
     }
 
