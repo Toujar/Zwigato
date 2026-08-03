@@ -43,14 +43,16 @@ INSERT INTO categories (name, description, image_url, is_active) VALUES
 
 -- ============================================================
 -- 3. RESTAURANTS  (owner_id 2 = Raj, 3 = Priya)
+-- Addresses use well-known Bengaluru landmarks that Nominatim
+-- (OpenStreetMap geocoder) can resolve reliably.
 -- ============================================================
 INSERT INTO restaurants (owner_id, name, description, address, city, phone, email, image_url, rating, delivery_time, min_order_amount, is_open, is_active) VALUES
-(2, 'Biryani House',        'Best Hyderabadi biryani in town',          '12 Church St, MG Road',      'Bengaluru', '9811000001', 'info@biryanihouse.com',  'https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=800&h=400&fit=crop', 4.5, 35, 150.00, TRUE, TRUE),
-(2, 'Pizza Paradise',       'Authentic Italian wood-fired pizzas',      '34 Koramangala 5th Block',   'Bengaluru', '9811000002', 'info@pizzaparadise.com', 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&h=400&fit=crop', 4.3, 40, 200.00, TRUE, TRUE),
-(3, 'The Burger Lab',       'Craft burgers with premium ingredients',   '7 Indiranagar 100ft Road',   'Bengaluru', '9811000003', 'hello@burgerlab.com',    'https://images.unsplash.com/photo-1550547660-d9450f859349?w=800&h=400&fit=crop', 4.4, 30, 120.00, TRUE, TRUE),
-(3, 'Dosa Corner',          'Traditional South Indian breakfasts',      '22 Basavanagudi, Gandhi Bazar','Bengaluru','9811000004', 'dosa@corner.com',        'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=800&h=400&fit=crop', 4.6, 25, 80.00,  TRUE, TRUE),
-(2, 'Dragon Wok',           'Indo-Chinese street-style wok cooking',    '55 Jayanagar 4th Block',     'Bengaluru', '9811000005', 'contact@dragonwok.com',  'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=800&h=400&fit=crop', 4.1, 30, 100.00, TRUE, TRUE),
-(3, 'Sweet Surrender',      'Artisan desserts and ice cream parlour',   '3 Lavelle Road, Central',    'Bengaluru', '9811000006', 'sweets@surrender.com',   'https://images.unsplash.com/photo-1551024506-0bccd828d307?w=800&h=400&fit=crop', 4.7, 20, 60.00,  TRUE, TRUE);
+(2, 'Biryani House',   'Best Hyderabadi biryani in town',        'MG Road, Bengaluru, Karnataka 560001',                   'Bengaluru', '9811000001', 'info@biryanihouse.com',  'https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=800&h=400&fit=crop', 4.5, 35, 150.00, TRUE, TRUE),
+(2, 'Pizza Paradise',  'Authentic Italian wood-fired pizzas',    'Koramangala 5th Block, Bengaluru, Karnataka 560095',     'Bengaluru', '9811000002', 'info@pizzaparadise.com', 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&h=400&fit=crop', 4.3, 40, 200.00, TRUE, TRUE),
+(3, 'The Burger Lab',  'Craft burgers with premium ingredients', '100 Feet Road, Indiranagar, Bengaluru, Karnataka 560038','Bengaluru', '9811000003', 'hello@burgerlab.com',    'https://images.unsplash.com/photo-1550547660-d9450f859349?w=800&h=400&fit=crop', 4.4, 30, 120.00, TRUE, TRUE),
+(3, 'Dosa Corner',     'Traditional South Indian breakfasts',   'Gandhi Bazaar, Basavanagudi, Bengaluru, Karnataka 560004','Bengaluru', '9811000004', 'dosa@corner.com',        'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=800&h=400&fit=crop', 4.6, 25, 80.00,  TRUE, TRUE),
+(2, 'Dragon Wok',      'Indo-Chinese street-style wok cooking',  'Jayanagar 4th Block, Bengaluru, Karnataka 560011',       'Bengaluru', '9811000005', 'contact@dragonwok.com',  'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=800&h=400&fit=crop', 4.1, 30, 100.00, TRUE, TRUE),
+(3, 'Sweet Surrender', 'Artisan desserts and ice cream parlour', 'Lavelle Road, Bengaluru, Karnataka 560001',              'Bengaluru', '9811000006', 'sweets@surrender.com',   'https://images.unsplash.com/photo-1551024506-0bccd828d307?w=800&h=400&fit=crop', 4.7, 20, 60.00,  TRUE, TRUE);
 
 -- ============================================================
 -- 4. FOOD ITEMS

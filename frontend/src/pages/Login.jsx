@@ -18,10 +18,13 @@ const Login = () => {
 
   const from = location.state?.from?.pathname || null
 
-  const getRedirectPath = (role, fallback) => {
+  const getRedirectPath = (role) => {
+    // Role always wins — ignore the "from" path for privileged roles
+    if (role === 'DELIVERY_AGENT')   return '/agent/available'
     if (role === 'RESTAURANT_OWNER') return '/dashboard/restaurants'
     if (role === 'ADMIN')            return '/dashboard'
-    return fallback || '/'
+    // For CUSTOMER, respect the original intended destination
+    return location.state?.from?.pathname || '/'
   }
 
   const handleSubmit = async (e) => {
@@ -30,8 +33,11 @@ const Login = () => {
     try {
       const authResponse = await authService.login(email, password)
       login(authResponse)
+
+      const role = authResponse?.user?.role
       toast.success(`Welcome back, ${authResponse.user?.name || 'there'}!`)
-      const dest = getRedirectPath(authResponse.user?.role, from)
+
+      const dest = getRedirectPath(role)
       navigate(dest, { replace: true })
     } catch (err) {
       toast.error(err.message || 'Invalid email or password')

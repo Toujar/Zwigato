@@ -15,8 +15,12 @@ import com.fooddelivery.service.OrderService;
 import com.fooddelivery.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * Delivery-agent-specific operations layered on top of OrderService.
@@ -35,6 +39,73 @@ public class DeliveryServiceImpl implements DeliveryService {
     private final UserRepository  userRepository;
     private final SecurityUtils   securityUtils;
     private final OrderService    orderService;
+
+    // ---------------------------------------------------------------
+    // getAvailableOrders — DELIVERY_AGENT: see unassigned orders ready for pickup
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getAvailableOrders() {
+        User currentUser = securityUtils.getCurrentUser();
+        if (!currentUser.getRole().equals(UserRole.DELIVERY_AGENT)
+                && !currentUser.getRole().equals(UserRole.ADMIN)) {
+            throw new UnauthorizedException("Only delivery agents can view available orders");
+        }
+        List<OrderStatus> pickupStatuses = List.of(
+                OrderStatus.PREPARING, OrderStatus.OUT_FOR_DELIVERY);
+        return orderRepository.findAvailableForAgent(pickupStatuses)
+                .stream()
+                .map(order -> orderService.getOrderById(order.getId()))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    // ---------------------------------------------------------------
+    // getMyDeliveries — DELIVERY_AGENT: see own assigned orders
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<OrderResponse> getMyDeliveries(Pageable pageable) {
+        User currentUser = securityUtils.getCurrentUser();
+        return orderRepository
+                .findByDeliveryAgent_IdOrderByPlacedAtDesc(currentUser.getId(), pageable)
+                .map(o -> orderService.getOrderById(o.getId()));
+    }
+
+    // ---------------------------------------------------------------
+    // acceptDelivery — DELIVERY_AGENT self-assigns to an unassigned order
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional
+    public OrderResponse acceptDelivery(Long orderId) {
+        User currentUser = securityUtils.getCurrentUser();
+
+        if (!currentUser.getRole().equals(UserRole.DELIVERY_AGENT)) {
+            throw new UnauthorizedException("Only delivery agents can accept deliveries");
+        }
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
+
+        if (order.getDeliveryAgent() != null) {
+            throw new BadRequestException("This order already has a delivery agent assigned");
+        }
+
+        if (order.getStatus() != OrderStatus.PREPARING
+                && order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
+            throw new BadRequestException(
+                    "Order is not ready for pickup. Status: " + order.getStatus().name());
+        }
+
+        order.setDeliveryAgent(currentUser);
+        order.setStatus(OrderStatus.OUT_FOR_DELIVERY);
+        orderRepository.save(order);
+
+        log.info("Agent {} accepted order {}", currentUser.getEmail(), orderId);
+        return orderService.getOrderById(orderId);
+    }
 
     // ---------------------------------------------------------------
     // getDeliveryStatus  — DELIVERY_AGENT (own) or ADMIN

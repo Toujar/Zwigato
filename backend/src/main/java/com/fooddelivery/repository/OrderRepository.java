@@ -52,6 +52,29 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByStatusIn(List<OrderStatus> statuses);
 
     /**
+     * Returns orders that are PREPARING or OUT_FOR_DELIVERY with no delivery agent assigned.
+     * Used by the agent "Available Deliveries" page to let agents self-accept orders.
+     */
+    @Query("SELECT o FROM Order o WHERE o.status IN (:statuses) AND o.deliveryAgent IS NULL ORDER BY o.placedAt ASC")
+    List<Order> findAvailableForAgent(@Param("statuses") List<OrderStatus> statuses);
+
+    /**
+     * Returns all orders assigned to a specific delivery agent, newest first.
+     */
+    Page<Order> findByDeliveryAgent_IdOrderByPlacedAtDesc(Long agentId, Pageable pageable);
+
+    /**
+     * Returns delivered orders for an agent — used to calculate earnings.
+     */
+    List<Order> findByDeliveryAgent_IdAndStatusOrderByPlacedAtDesc(Long agentId, OrderStatus status);
+
+    /**
+     * Returns all orders placed at restaurants owned by a given user.
+     * Used by the RESTAURANT_OWNER dashboard to see incoming orders.
+     */
+    Page<Order> findByRestaurant_Owner_IdOrderByPlacedAtDesc(Long ownerId, Pageable pageable);
+
+    /**
      * Returns a paginated list of orders placed by a specific user,
      * sorted by placement time descending (newest first).
      *
@@ -109,18 +132,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     /**
      * Fetches a complete order with items, food items, AND payment
-     * in one query.
-     *
-     * Used by: Order confirmation / receipt page — needs all data
-     * including payment status.
-     *
-     * JPQL adds LEFT JOIN FETCH o.payment to the previous query.
+     * in one query. Also fetches restaurant + owner to avoid lazy-load
+     * failures in assertCanViewOrder / assertCanUpdateStatus.
      */
     @Query("""
         SELECT o FROM Order o
         LEFT JOIN FETCH o.orderItems oi
         LEFT JOIN FETCH oi.foodItem
         LEFT JOIN FETCH o.payment
+        LEFT JOIN FETCH o.restaurant r
+        LEFT JOIN FETCH r.owner
         WHERE o.id = :orderId
         """)
     Optional<Order> findByIdWithItemsAndPayment(@Param("orderId") Long orderId);

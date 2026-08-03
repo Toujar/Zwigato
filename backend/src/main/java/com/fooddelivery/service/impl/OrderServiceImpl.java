@@ -155,13 +155,29 @@ public class OrderServiceImpl implements OrderService {
     }
 
     // ---------------------------------------------------------------
-    // Get orders for current user
+    // Get orders for current user  (role-aware)
     // ---------------------------------------------------------------
 
     @Override
     @Transactional(readOnly = true)
     public Page<OrderResponse> getOrdersForCurrentUser(Pageable pageable) {
         User currentUser = securityUtils.getCurrentUser();
+
+        // RESTAURANT_OWNER → return orders placed at their restaurants
+        if (currentUser.getRole().equals(UserRole.RESTAURANT_OWNER)) {
+            return orderRepository
+                    .findByRestaurant_Owner_IdOrderByPlacedAtDesc(currentUser.getId(), pageable)
+                    .map(this::toResponse);
+        }
+
+        // ADMIN → return all orders
+        if (currentUser.getRole().equals(UserRole.ADMIN)) {
+            return orderRepository
+                    .findAll(pageable)
+                    .map(this::toResponse);
+        }
+
+        // CUSTOMER (default) → return orders they placed
         return orderRepository
                 .findByUser_IdOrderByPlacedAtDesc(currentUser.getId(), pageable)
                 .map(this::toResponse);
@@ -189,7 +205,8 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderResponse updateOrderStatus(Long id, OrderStatus newStatus) {
-        Order order = orderRepository.findById(id)
+        // Use the JOIN FETCH query so restaurant.owner is already loaded
+        Order order = orderRepository.findByIdWithItemsAndPayment(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", "id", id));
 
         User currentUser = securityUtils.getCurrentUser();
@@ -198,11 +215,12 @@ public class OrderServiceImpl implements OrderService {
         // Validate the status transition
         validateStatusTransition(order.getStatus(), newStatus);
 
+        OrderStatus previousStatus = order.getStatus();
         order.setStatus(newStatus);
         Order saved = orderRepository.save(order);
 
         log.info("Order {} status changed: {} → {} by {}",
-                id, order.getStatus(), newStatus, currentUser.getEmail());
+                id, previousStatus, newStatus, currentUser.getEmail());
         return toResponse(saved);
     }
 
@@ -248,6 +266,8 @@ public class OrderServiceImpl implements OrderService {
      *  - The owner of the restaurant the order was placed at.
      *  - Any ADMIN.
      *  - The assigned delivery agent.
+     *  - Any DELIVERY_AGENT can view orders in PREPARING/OUT_FOR_DELIVERY
+     *    (needed to inspect available orders before accepting).
      */
     private void assertCanViewOrder(Order order, User currentUser) {
         if (currentUser.getRole().equals(UserRole.ADMIN)) return;
@@ -256,6 +276,10 @@ public class OrderServiceImpl implements OrderService {
                 && order.getRestaurant().getOwner().getId().equals(currentUser.getId())) return;
         if (order.getDeliveryAgent() != null
                 && order.getDeliveryAgent().getId().equals(currentUser.getId())) return;
+        // Any delivery agent can view orders that are ready for pickup
+        if (currentUser.getRole().equals(UserRole.DELIVERY_AGENT)
+                && (order.getStatus() == OrderStatus.PREPARING
+                    || order.getStatus() == OrderStatus.OUT_FOR_DELIVERY)) return;
 
         throw new UnauthorizedException("You are not authorised to view this order");
     }

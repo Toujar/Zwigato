@@ -1,323 +1,315 @@
 /**
  * DeliveryMap
  *
- * Shows a Google Map with:
- *  - 📍 Restaurant marker (origin)
- *  - 🏠 Customer marker (destination)
- *  - Blue driving route between them (Google Directions API)
- *  - Distance and duration info bar
+ * Renders a free, no-billing delivery route map using:
+ *   - Leaflet.js        — map rendering library
+ *   - OpenStreetMap     — free map tiles (no key needed)
+ *   - Nominatim         — free geocoding (address → lat/lng)
+ *   - OpenRouteService  — free driving route (optional API key)
  *
  * Props:
- *  - restaurantAddress {string}  — full address of the restaurant
- *  - deliveryAddress   {string}  — full address of the customer
- *  - restaurantName    {string}  — label for the restaurant pin
- *  - height            {string}  — CSS height (default "400px")
+ *   restaurantAddress {string}  — full address of restaurant
+ *   deliveryAddress   {string}  — customer delivery address
+ *   restaurantName    {string}  — label shown on restaurant marker
+ *   height            {string}  — CSS height string (default "380px")
  */
-import { useState, useCallback, useRef } from 'react'
-import {
-  GoogleMap,
-  useJsApiLoader,
-  Marker,
-  DirectionsRenderer,
-  InfoWindow,
-} from '@react-google-maps/api'
+import { useEffect, useRef, useState } from 'react'
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import { geocodeAddress, getDrivingRoute } from '../../services/geoService'
 
-const LIBRARIES = ['places', 'geometry']
+// ── Fix Leaflet's default marker icons (broken in Vite/webpack) ──────
+// Leaflet tries to auto-detect icon URLs via webpack magic comments
+// that Vite doesn't support. Override them explicitly.
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+})
 
-const MAP_STYLE = [
-  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',      stylers: [{ visibility: 'simplified' }] },
-  {
-    featureType: 'water',
-    elementType: 'geometry',
-    stylers: [{ color: '#bae6fd' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry',
-    stylers: [{ color: '#e0f2fe' }],
-  },
-]
+// Custom SVG marker factory — renders emoji inside a coloured circle
+const makeIcon = (emoji, color) =>
+  L.divIcon({
+    className: '',
+    html: `
+      <div style="
+        width:40px;height:40px;border-radius:50%;
+        background:${color};border:3px solid white;
+        display:flex;align-items:center;justify-content:center;
+        font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.25);
+      ">${emoji}</div>`,
+    iconSize:   [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor:[0, -22],
+  })
 
-const DEFAULT_CENTER = { lat: 12.9716, lng: 77.5946 } // Bengaluru
+const RESTAURANT_ICON = makeIcon('🏪', '#0EA5E9')
+const DELIVERY_ICON   = makeIcon('🏠', '#22C55E')
+
+// DEFAULT_CENTER = Bengaluru city centre
+const DEFAULT_CENTER = [12.9716, 77.5946]
+
+// Inner component that fits map bounds when the route changes
+const FitBounds = ({ positions }) => {
+  const map = useMap()
+  useEffect(() => {
+    if (positions && positions.length >= 2) {
+      map.fitBounds(L.latLngBounds(positions), { padding: [50, 50] })
+    }
+  }, [positions, map])
+  return null
+}
 
 const DeliveryMap = ({
   restaurantAddress,
   deliveryAddress,
   restaurantName = 'Restaurant',
-  height = '400px',
+  orderStatus = null,        // 'DELIVERED' | 'CANCELLED' | 'OUT_FOR_DELIVERY' | etc.
+  height = '380px',
 }) => {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: apiKey || '',
-    libraries: LIBRARIES,
+  const isDelivered = orderStatus === 'DELIVERED'
+  const isCancelled = orderStatus === 'CANCELLED'
+  const [state, setState] = useState({
+    loading:      true,
+    error:        null,
+    originCoords: null,
+    destCoords:   null,
+    partial:      false,  // true if one address fell back to city centre
+    route:        null,
   })
 
-  const [map, setMap]                   = useState(null)
-  const [directions, setDirections]     = useState(null)
-  const [routeInfo, setRouteInfo]       = useState(null) // { distance, duration }
-  const [routeError, setRouteError]     = useState(null)
-  const [activeMarker, setActiveMarker] = useState(null) // 'origin' | 'dest'
-  const [calculating, setCalculating]   = useState(false)
-  const directionsService               = useRef(null)
-
-  const onMapLoad = useCallback((mapInstance) => {
-    setMap(mapInstance)
-    directionsService.current = new window.google.maps.DirectionsService()
-
-    if (restaurantAddress && deliveryAddress) {
-      calculateRoute(mapInstance)
+  useEffect(() => {
+    if (!restaurantAddress || !deliveryAddress) {
+      setState(s => ({ ...s, loading: false }))
+      return
     }
-  }, [restaurantAddress, deliveryAddress]) // eslint-disable-line
 
-  const calculateRoute = useCallback((mapInstance) => {
-    if (!restaurantAddress || !deliveryAddress) return
-    if (!window.google) return
+    let cancelled = false
 
-    setCalculating(true)
-    setRouteError(null)
+    const load = async () => {
+      setState(s => ({ ...s, loading: true, error: null }))
 
-    const svc = directionsService.current ||
-      new window.google.maps.DirectionsService()
+      // Step 1: geocode both addresses in parallel
+      const [origin, dest] = await Promise.all([
+        geocodeAddress(restaurantAddress),
+        geocodeAddress(deliveryAddress),
+      ])
 
-    svc.route(
-      {
-        origin:      restaurantAddress,
-        destination: deliveryAddress,
-        travelMode:  window.google.maps.TravelMode.DRIVING,
-        region:      'IN',
-      },
-      (result, status) => {
-        setCalculating(false)
-        if (status === 'OK' && result) {
-          setDirections(result)
-          const leg = result.routes[0]?.legs[0]
-          if (leg) {
-            setRouteInfo({
-              distance: leg.distance?.text,
-              duration: leg.duration?.text,
-            })
-          }
-          // Fit map to route bounds
-          if (mapInstance && result.routes[0]?.bounds) {
-            mapInstance.fitBounds(result.routes[0].bounds, 60)
-          }
-        } else {
-          setRouteError(`Could not calculate route: ${status}`)
-          // Fall back to showing both addresses as text
-        }
+      if (cancelled) return
+
+      if (!origin && !dest) {
+        setState(s => ({
+          ...s, loading: false,
+          error: 'Could not locate either address. Check that the city name is included.',
+        }))
+        return
       }
-    )
+
+      // If only one resolved, use city centre of Bengaluru as fallback for the other
+      const BENGALURU = { lat: 12.9716, lng: 77.5946 }
+      const resolvedOrigin = origin || BENGALURU
+      const resolvedDest   = dest   || BENGALURU
+      const partial        = !origin || !dest
+
+      // Step 2: fetch driving route
+      const route = await getDrivingRoute(resolvedOrigin, resolvedDest)
+      if (cancelled) return
+
+      setState({
+        loading: false,
+        error:   null,
+        originCoords: resolvedOrigin,
+        destCoords:   resolvedDest,
+        partial,       // true if one address fell back to city centre
+        route,
+      })
+    }
+
+    load()
+    return () => { cancelled = true }
   }, [restaurantAddress, deliveryAddress])
 
-  // ── No API key ──────────────────────────────────────────────
-  if (!apiKey || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
+  // ── Loading state ───────────────────────────────────────────
+  if (state.loading) {
     return (
-      <div className="glass-subtle rounded-2xl p-6 text-center" style={{ height }}>
-        <div className="flex flex-col items-center justify-center h-full gap-3">
-          <div className="text-4xl">🗺️</div>
-          <p className="font-bold text-secondary">Map not configured</p>
-          <p className="text-slate-500 text-sm max-w-xs">
-            Add your Google Maps API key to <code className="bg-sky-50 px-1.5 py-0.5 rounded text-xs">.env</code>:
-          </p>
-          <code className="text-xs bg-slate-100 px-3 py-2 rounded-xl text-slate-600 block max-w-full overflow-x-auto">
-            VITE_GOOGLE_MAPS_API_KEY=AIza...
-          </code>
-          <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer"
-            className="btn-glass text-xs px-4 py-2 mt-1">
-            Get API Key →
-          </a>
+      <div className="glass-subtle rounded-2xl flex flex-col items-center justify-center gap-3"
+        style={{ height }}>
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-slate-500 text-sm">Calculating route…</p>
+        <p className="text-slate-400 text-xs">Powered by OpenStreetMap</p>
+      </div>
+    )
+  }
 
-          {/* Fallback address display */}
-          {(restaurantAddress || deliveryAddress) && (
-            <div className="w-full mt-4 space-y-2 text-left">
-              {restaurantAddress && (
-                <div className="glass-subtle rounded-xl p-3 flex items-start gap-2">
-                  <span className="text-lg shrink-0">🏪</span>
-                  <div>
-                    <p className="text-xs font-bold text-secondary">{restaurantName}</p>
-                    <p className="text-xs text-slate-500">{restaurantAddress}</p>
-                  </div>
+  // ── Error state ─────────────────────────────────────────────
+  if (state.error) {
+    return (
+      <div className="glass-subtle rounded-2xl p-5" style={{ height }}>
+        <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+          <div className="text-3xl">⚠️</div>
+          <p className="text-slate-600 text-sm font-semibold">{state.error}</p>
+          <div className="space-y-2 w-full mt-2">
+            {restaurantAddress && (
+              <div className="glass rounded-xl p-3 flex items-center gap-2 text-left">
+                <span>🏪</span>
+                <div>
+                  <p className="text-xs font-bold text-secondary">{restaurantName}</p>
+                  <p className="text-xs text-slate-500">{restaurantAddress}</p>
                 </div>
-              )}
-              {deliveryAddress && (
-                <div className="glass-subtle rounded-xl p-3 flex items-start gap-2">
-                  <span className="text-lg shrink-0">🏠</span>
-                  <div>
-                    <p className="text-xs font-bold text-secondary">Your Location</p>
-                    <p className="text-xs text-slate-500">{deliveryAddress}</p>
-                  </div>
+              </div>
+            )}
+            {deliveryAddress && (
+              <div className="glass rounded-xl p-3 flex items-center gap-2 text-left">
+                <span>🏠</span>
+                <div>
+                  <p className="text-xs font-bold text-secondary">Delivery</p>
+                  <p className="text-xs text-slate-500">{deliveryAddress}</p>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     )
   }
 
-  if (loadError) {
+  // ── No coords yet ───────────────────────────────────────────
+  if (!state.originCoords || !state.destCoords) {
     return (
-      <div className="glass-subtle rounded-2xl p-6 text-center" style={{ height }}>
-        <p className="text-red-500 font-semibold">Failed to load Google Maps</p>
-        <p className="text-slate-500 text-sm mt-1">{loadError.message}</p>
+      <div className="glass-subtle rounded-2xl p-5 text-center" style={{ height }}>
+        <p className="text-slate-400 text-sm mt-4">Enter a delivery address to see the route</p>
       </div>
     )
   }
 
-  if (!isLoaded) {
-    return (
-      <div className="glass-subtle rounded-2xl flex items-center justify-center" style={{ height }}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-slate-500 text-sm">Loading map…</p>
-        </div>
-      </div>
-    )
-  }
+  const { originCoords, destCoords, route, partial } = state
+  const polylinePositions = route?.polyline ?? [
+    [originCoords.lat, originCoords.lng],
+    [destCoords.lat,   destCoords.lng],
+  ]
 
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ height }}>
-      {/* Route info bar */}
-      {(routeInfo || calculating || routeError) && (
-        <div className="absolute z-10 top-3 left-1/2 -translate-x-1/2"
-          style={{ pointerEvents: 'none' }}>
-          <div className="glass-elevated px-4 py-2 flex items-center gap-3 rounded-full shadow-glass">
-            {calculating ? (
-              <>
-                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-semibold text-slate-600">Calculating route…</span>
-              </>
-            ) : routeError ? (
-              <span className="text-xs font-semibold text-red-500">{routeError}</span>
-            ) : (
-              <>
-                <span className="text-sm">🛵</span>
-                <span className="text-xs font-bold text-secondary">{routeInfo.distance}</span>
-                <span className="text-slate-300 text-xs">·</span>
-                <span className="text-xs font-semibold text-primary">{routeInfo.duration}</span>
-              </>
+    <div className="rounded-2xl overflow-hidden relative" style={{ height }}>
+
+      {/* ── Route info bar (floats above map) ── */}
+      {route && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none">
+          <div className="glass-elevated px-4 py-2 rounded-full flex items-center gap-3 shadow-glass text-sm">
+            <span>🏪</span>
+            <span className="font-black text-primary">{route.distanceKm}</span>
+            <span className="text-slate-300">·</span>
+            <span className="font-semibold text-secondary">{route.durationMin}</span>
+            <span>🏠</span>
+            {route.isStraightLine && (
+              <span className="text-slate-400 text-xs">(straight line)</span>
             )}
           </div>
         </div>
       )}
 
-      <div className="relative w-full h-full">
-        <GoogleMap
-          mapContainerStyle={{ width: '100%', height: '100%' }}
-          center={DEFAULT_CENTER}
-          zoom={13}
-          onLoad={onMapLoad}
-          options={{
-            styles:            MAP_STYLE,
-            disableDefaultUI:  false,
-            zoomControl:       true,
-            streetViewControl: false,
-            mapTypeControl:    false,
-            fullscreenControl: true,
-          }}
-        >
-          {/* Route polyline */}
-          {directions && (
-            <DirectionsRenderer
-              directions={directions}
-              options={{
-                suppressMarkers:   true, // we draw our own markers
-                polylineOptions: {
-                  strokeColor:   '#0EA5E9',
-                  strokeWeight:  5,
-                  strokeOpacity: 0.85,
-                },
-              }}
-            />
-          )}
-
-          {/* Restaurant marker */}
-          {directions?.routes?.[0]?.legs?.[0]?.start_location && (
-            <>
-              <Marker
-                position={directions.routes[0].legs[0].start_location}
-                icon={{
-                  url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-                      <circle cx="20" cy="20" r="18" fill="#0EA5E9" stroke="white" stroke-width="3"/>
-                      <text x="20" y="26" text-anchor="middle" font-size="18">🏪</text>
-                    </svg>
-                  `),
-                  scaledSize: new window.google.maps.Size(40, 40),
-                  anchor:     new window.google.maps.Point(20, 20),
-                }}
-                onClick={() => setActiveMarker('origin')}
-              />
-              {activeMarker === 'origin' && (
-                <InfoWindow
-                  position={directions.routes[0].legs[0].start_location}
-                  onCloseClick={() => setActiveMarker(null)}
-                >
-                  <div className="text-sm">
-                    <p className="font-bold text-slate-800">{restaurantName}</p>
-                    <p className="text-slate-500 text-xs mt-0.5">{restaurantAddress}</p>
-                  </div>
-                </InfoWindow>
-              )}
-            </>
-          )}
-
-          {/* Delivery destination marker */}
-          {directions?.routes?.[0]?.legs?.[0]?.end_location && (
-            <>
-              <Marker
-                position={directions.routes[0].legs[0].end_location}
-                icon={{
-                  url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-                      <circle cx="20" cy="20" r="18" fill="#22C55E" stroke="white" stroke-width="3"/>
-                      <text x="20" y="26" text-anchor="middle" font-size="18">🏠</text>
-                    </svg>
-                  `),
-                  scaledSize: new window.google.maps.Size(40, 40),
-                  anchor:     new window.google.maps.Point(20, 20),
-                }}
-                onClick={() => setActiveMarker('dest')}
-              />
-              {activeMarker === 'dest' && (
-                <InfoWindow
-                  position={directions.routes[0].legs[0].end_location}
-                  onCloseClick={() => setActiveMarker(null)}
-                >
-                  <div className="text-sm">
-                    <p className="font-bold text-slate-800">Delivery Location</p>
-                    <p className="text-slate-500 text-xs mt-0.5">{deliveryAddress}</p>
-                  </div>
-                </InfoWindow>
-              )}
-            </>
-          )}
-        </GoogleMap>
-
-        {/* Floating route info overlay */}
-        {routeInfo && (
-          <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
-            <div className="glass-elevated px-4 py-3 flex items-center gap-4 rounded-2xl">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🏪</span>
-                <span className="text-xs text-slate-500 max-w-[120px] truncate">{restaurantName}</span>
-              </div>
-              <div className="flex-1 flex items-center gap-1 justify-center">
-                <div className="h-0.5 flex-1 bg-primary/30 relative">
-                  <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 text-xs animate-bounce">🛵</div>
-                </div>
-              </div>
-              <div className="flex flex-col items-end">
-                <span className="text-xs font-black text-primary">{routeInfo.distance}</span>
-                <span className="text-xs text-slate-400">{routeInfo.duration}</span>
-              </div>
-              <span className="text-xl">🏠</span>
-            </div>
+      {/* ── Partial geocode warning ── */}
+      {partial && (
+        <div className="absolute top-14 left-3 right-3 z-[1000] pointer-events-none">
+          <div className="glass-elevated px-3 py-2 rounded-xl flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <p className="text-xs text-slate-500">
+              One address could not be precisely located — showing approximate position.
+            </p>
           </div>
+        </div>
+      )}
+
+      {/* ── Leaflet map ── */}
+      <MapContainer
+        center={DEFAULT_CENTER}
+        zoom={12}
+        style={{ width: '100%', height: '100%' }}
+        zoomControl={true}
+        attributionControl={true}
+      >
+        {/* OpenStreetMap tiles — completely free */}
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
+          maxZoom={19}
+        />
+
+        {/* Auto-fit map to route */}
+        <FitBounds positions={polylinePositions} />
+
+        {/* Driving route polyline — green when delivered, blue when active */}
+        <Polyline
+          positions={polylinePositions}
+          pathOptions={{
+            color:     isDelivered ? '#22C55E' : '#0EA5E9',
+            weight:    5,
+            opacity:   isDelivered ? 0.7 : 0.85,
+            dashArray: route?.isStraightLine ? '8 6' : undefined,
+          }}
+        />
+
+        {/* Restaurant marker — hidden after delivery (customer only sees destination) */}
+        {!isDelivered && (
+          <Marker position={[originCoords.lat, originCoords.lng]} icon={RESTAURANT_ICON}>
+            <Popup>
+              <div style={{ minWidth: 140 }}>
+                <p style={{ fontWeight: 700, marginBottom: 2 }}>{restaurantName}</p>
+                <p style={{ fontSize: 11, color: '#64748b' }}>{restaurantAddress}</p>
+              </div>
+            </Popup>
+          </Marker>
         )}
-      </div>
+
+        {/* Delivery marker */}
+        <Marker position={[destCoords.lat, destCoords.lng]} icon={DELIVERY_ICON}>
+          <Popup>
+            <div style={{ minWidth: 140 }}>
+              <p style={{ fontWeight: 700, marginBottom: 2 }}>
+                {isDelivered ? '✓ Delivered Here' : 'Delivery Location'}
+              </p>
+              <p style={{ fontSize: 11, color: '#64748b' }}>{deliveryAddress}</p>
+            </div>
+          </Popup>
+        </Marker>
+      </MapContainer>
+
+      {/* ── Bottom info bar ── */}
+      {route && (
+        <div className="absolute bottom-3 left-3 right-3 z-[1000] pointer-events-none">
+          <div className="glass-elevated px-4 py-3 rounded-2xl flex items-center gap-3">
+            {isDelivered ? (
+              /* Delivered — show green confirmation bar */
+              <div className="flex-1 flex items-center justify-center gap-2">
+                <span className="text-lg">🏠</span>
+                <span className="text-sm font-black text-green-600">Delivered ✓</span>
+                <span className="text-slate-300 text-xs">·</span>
+                <span className="text-xs text-slate-400">{route.distanceKm}</span>
+              </div>
+            ) : (
+              /* In transit — scooter animation */
+              <>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-lg shrink-0">🏪</span>
+                  <span className="text-xs text-slate-500 truncate">{restaurantName}</span>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="h-px flex-1 bg-primary/20 relative">
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-sm animate-bounce">
+                      🛵
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-black text-primary">{route.distanceKm}</p>
+                  <p className="text-xs text-slate-400">{route.durationMin}</p>
+                </div>
+                <span className="text-lg shrink-0">🏠</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

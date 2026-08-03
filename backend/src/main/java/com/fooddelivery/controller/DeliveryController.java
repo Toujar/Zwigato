@@ -9,9 +9,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * ============================================================
@@ -46,6 +51,40 @@ import org.springframework.web.bind.annotation.*;
 public class DeliveryController {
 
     private final DeliveryService deliveryService;
+
+    // ----------------------------------------------------------------
+    // GET /api/delivery/available  — orders ready for agent pickup
+    // ----------------------------------------------------------------
+    @GetMapping("/available")
+    @Operation(summary = "Get orders available for pickup (DELIVERY_AGENT)")
+    public ResponseEntity<ApiResponse<List<OrderResponse>>> getAvailable() {
+        return ResponseEntity.ok(ApiResponse.success(
+                deliveryService.getAvailableOrders(), "Available orders"));
+    }
+
+    // ----------------------------------------------------------------
+    // GET /api/delivery/my-deliveries  — agent's own assigned orders
+    // ----------------------------------------------------------------
+    @GetMapping("/my-deliveries")
+    @Operation(summary = "Get my assigned deliveries (DELIVERY_AGENT)")
+    public ResponseEntity<ApiResponse<Page<OrderResponse>>> getMyDeliveries(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequest pageable = PageRequest.of(page, size, Sort.by("placedAt").descending());
+        return ResponseEntity.ok(ApiResponse.success(
+                deliveryService.getMyDeliveries(pageable), "My deliveries"));
+    }
+
+    // ----------------------------------------------------------------
+    // PATCH /api/delivery/{orderId}/accept  — agent self-accepts
+    // ----------------------------------------------------------------
+    @PatchMapping("/{orderId}/accept")
+    @Operation(summary = "Accept an available delivery order (DELIVERY_AGENT)")
+    public ResponseEntity<ApiResponse<OrderResponse>> acceptDelivery(
+            @PathVariable Long orderId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                deliveryService.acceptDelivery(orderId), "Delivery accepted"));
+    }
 
     // ----------------------------------------------------------------
     // GET /api/delivery/{orderId}/status

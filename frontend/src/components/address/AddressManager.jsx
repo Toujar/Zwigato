@@ -2,47 +2,62 @@
  * AddressManager
  *
  * Full CRUD UI for saved delivery addresses.
- * Embedded in the Profile page.
- * Uses AddressContext for state.
+ * Uses Nominatim (OpenStreetMap) for geocoding — free, no key needed.
  */
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAddress } from '../../context/AddressContext'
 import { useToast } from '../../context/ToastContext'
 
-const LABELS = ['Home', 'Work', 'Partner\'s place', 'Other']
-
+const LABELS = ['Home', 'Work', "Partner's place", 'Other']
 const EMPTY_FORM = { label: 'Home', fullAddress: '', lat: null, lng: null }
 
-const AddressForm = ({ initial, onSave, onCancel }) => {
-  const [form, setForm]  = useState(initial || EMPTY_FORM)
-  const inputRef         = useRef(null)
-  const autocomplete     = useRef(null)
-  const mapsReady        = typeof window !== 'undefined' &&
-    !!window.google?.maps?.places &&
-    import.meta.env.VITE_GOOGLE_MAPS_API_KEY !== 'YOUR_GOOGLE_MAPS_API_KEY_HERE'
-
+function useDebounce(value, delay) {
+  const [debounced, setDebounced] = useState(value)
   useEffect(() => {
-    if (!mapsReady || !inputRef.current) return
-    autocomplete.current = new window.google.maps.places.Autocomplete(
-      inputRef.current,
-      { componentRestrictions: { country: 'in' }, types: ['geocode'] }
-    )
-    autocomplete.current.addListener('place_changed', () => {
-      const place = autocomplete.current.getPlace()
-      if (place?.formatted_address) {
-        setForm(f => ({
-          ...f,
-          fullAddress: place.formatted_address,
-          lat: place.geometry?.location?.lat() || null,
-          lng: place.geometry?.location?.lng() || null,
-        }))
-      }
-    })
-    return () => {
-      if (autocomplete.current)
-        window.google.maps.event.clearInstanceListeners(autocomplete.current)
+    const t = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debounced
+}
+
+const AddressForm = ({ initial, onSave, onCancel }) => {
+  const [form, setForm]         = useState(initial || EMPTY_FORM)
+  const [suggestions, setSuggestions] = useState([])
+  const [showSugg, setShowSugg] = useState(false)
+  const [fetching, setFetching] = useState(false)
+  const wrapperRef              = useRef(null)
+  const debouncedAddress        = useDebounce(form.fullAddress, 450)
+
+  // Nominatim lookup
+  useEffect(() => {
+    if (!debouncedAddress || debouncedAddress.length < 4) {
+      setSuggestions([])
+      return
     }
-  }, [mapsReady])
+    let cancelled = false
+    setFetching(true)
+    fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(debouncedAddress)}&format=json&limit=5&countrycodes=in`,
+      { headers: { 'User-Agent': 'Zwigato-FoodDelivery/1.0', 'Accept-Language': 'en' } }
+    )
+      .then(r => r.json())
+      .then(data => { if (!cancelled) { setSuggestions(data || []); setShowSugg(true); setFetching(false) } })
+      .catch(() => { if (!cancelled) setFetching(false) })
+    return () => { cancelled = true }
+  }, [debouncedAddress])
+
+  // Close on outside click
+  useEffect(() => {
+    const h = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setShowSugg(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  const handleSelect = (place) => {
+    setForm(f => ({ ...f, fullAddress: place.display_name, lat: parseFloat(place.lat), lng: parseFloat(place.lon) }))
+    setSuggestions([])
+    setShowSugg(false)
+  }
 
   const handleSubmit = e => {
     e.preventDefault()
@@ -52,45 +67,61 @@ const AddressForm = ({ initial, onSave, onCancel }) => {
 
   return (
     <form onSubmit={handleSubmit} className="glass p-5 space-y-4 animate-scale-in">
-      {/* Label */}
+      {/* Label buttons */}
       <div>
         <label className="block text-slate-700 font-semibold mb-2 text-sm">Address Label</label>
         <div className="flex gap-2 flex-wrap">
           {LABELS.map(l => (
             <button key={l} type="button"
               onClick={() => setForm(f => ({ ...f, label: l }))}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                form.label === l ? 'btn-primary' : 'btn-glass'
-              }`}>
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${form.label === l ? 'btn-primary' : 'btn-glass'}`}>
               {l === 'Home' ? '🏠' : l === 'Work' ? '💼' : l === "Partner's place" ? '❤️' : '📍'} {l}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Address input */}
-      <div>
-        <label className="block text-slate-700 font-semibold mb-1.5 text-sm">
-          Full Address *
-        </label>
-        <input
-          ref={inputRef}
-          type="text"
-          value={form.fullAddress}
-          onChange={e => setForm(f => ({ ...f, fullAddress: e.target.value, lat: null, lng: null }))}
-          className="input-glass"
-          placeholder={mapsReady ? 'Start typing for suggestions…' : 'Full address including city and pincode'}
-          required
-        />
-        {form.lat && form.lng && (
-          <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
+      {/* Address input with suggestions */}
+      <div ref={wrapperRef} className="relative">
+        <label className="block text-slate-700 font-semibold mb-1.5 text-sm">Full Address *</label>
+        <div className="relative">
+          <input
+            type="text" value={form.fullAddress} required autoComplete="off"
+            onChange={e => setForm(f => ({ ...f, fullAddress: e.target.value, lat: null, lng: null }))}
+            onFocus={() => suggestions.length > 0 && setShowSugg(true)}
+            className="input-glass pr-8"
+            placeholder="Start typing — OpenStreetMap suggestions will appear"
+          />
+          {fetching && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+        </div>
+
+        {form.lat && form.lng ? (
+          <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
             ✅ Location confirmed ({form.lat.toFixed(4)}, {form.lng.toFixed(4)})
           </p>
+        ) : (
+          <p className="text-xs text-slate-400 mt-1">🔍 Powered by OpenStreetMap · type 4+ chars</p>
         )}
-        {mapsReady && !form.lat && (
-          <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-            🔍 Select a Google suggestion to pin the exact location
-          </p>
+
+        {showSugg && suggestions.length > 0 && (
+          <ul className="absolute z-50 w-full mt-1 glass-elevated rounded-2xl overflow-hidden shadow-glass max-h-52 overflow-y-auto">
+            {suggestions.map(place => (
+              <li key={place.place_id}>
+                <button type="button"
+                  onMouseDown={e => { e.preventDefault(); handleSelect(place) }}
+                  className="w-full text-left px-4 py-3 text-xs hover:bg-sky-50/60 transition-colors
+                             border-b last:border-0 flex items-start gap-2"
+                  style={{ borderColor: 'rgba(186,230,253,0.35)' }}>
+                  <span className="text-primary shrink-0 mt-0.5">📍</span>
+                  <span className="text-slate-700 line-clamp-2">{place.display_name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
@@ -98,9 +129,7 @@ const AddressForm = ({ initial, onSave, onCancel }) => {
         <button type="submit" className="btn-primary flex-1">
           {initial ? 'Update Address' : 'Save Address'}
         </button>
-        <button type="button" onClick={onCancel} className="btn-glass px-5">
-          Cancel
-        </button>
+        <button type="button" onClick={onCancel} className="btn-glass px-5">Cancel</button>
       </div>
     </form>
   )

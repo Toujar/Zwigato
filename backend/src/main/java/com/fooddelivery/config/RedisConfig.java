@@ -124,12 +124,24 @@ public class RedisConfig {
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        // WRAPPER_ARRAY — the only format that correctly handles
-        // both single objects AND top-level List / Collection values.
+        // EVERYTHING — wraps ALL types including the outer List/ArrayList container.
+        //
+        // Why not NON_FINAL?
+        //   NON_FINAL wraps each element but NOT the outer collection.
+        //   So a List<FoodItemResponse> is stored as:
+        //     [["ClassName",{...}], ["ClassName",{...}]]
+        //   On read, Jackson sees the outer '[' and expects a type-name string
+        //   at position [0], but gets another '[' (the first element wrapper).
+        //   Result: "Unexpected token START_ARRAY, expected VALUE_STRING"
+        //
+        // EVERYTHING wraps the collection itself too:
+        //     ["java.util.ArrayList", [["ClassName",{...}], ...]]
+        //   Jackson reads "java.util.ArrayList" first, then deserializes
+        //   the inner array — works for both single objects AND lists.
         mapper.activateDefaultTyping(
                 LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.WRAPPER_ARRAY          // ← was PROPERTY, now WRAPPER_ARRAY
+                ObjectMapper.DefaultTyping.EVERYTHING,
+                JsonTypeInfo.As.WRAPPER_ARRAY
         );
         return new GenericJackson2JsonRedisSerializer(mapper);
     }
