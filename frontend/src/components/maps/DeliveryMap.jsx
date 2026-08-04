@@ -65,11 +65,13 @@ const DeliveryMap = ({
   restaurantAddress,
   deliveryAddress,
   restaurantName = 'Restaurant',
-  orderStatus = null,        // 'DELIVERED' | 'CANCELLED' | 'OUT_FOR_DELIVERY' | etc.
+  orderStatus    = null,
+  deliveryProgress = 0,   // 0→1 — how far along the delivery is (drives distance/time display)
   height = '380px',
 }) => {
   const isDelivered = orderStatus === 'DELIVERED'
   const isCancelled = orderStatus === 'CANCELLED'
+  const isOnWay     = orderStatus === 'OUT_FOR_DELIVERY'
   const [state, setState] = useState({
     loading:      true,
     error:        null,
@@ -197,12 +199,30 @@ const DeliveryMap = ({
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none">
           <div className="glass-elevated px-4 py-2 rounded-full flex items-center gap-3 shadow-glass text-sm">
             <span>🏪</span>
-            <span className="font-black text-primary">{route.distanceKm}</span>
-            <span className="text-slate-300">·</span>
-            <span className="font-semibold text-secondary">{route.durationMin}</span>
+            {isDelivered ? (
+              <span className="font-black text-green-600">Delivered ✓</span>
+            ) : isOnWay && deliveryProgress > 0 ? (
+              /* Shrink distance + time as scooter gets closer */
+              <>
+                <span className="font-black text-primary">
+                  ~{Math.max(0, (1 - deliveryProgress) * parseFloat(route.distanceKm)).toFixed(1)} km
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="font-semibold text-secondary">
+                  ~{Math.max(0, Math.round((1 - deliveryProgress) * parseInt(route.durationMin, 10)))} mins
+                </span>
+                <span className="text-base animate-bounce">🛵</span>
+              </>
+            ) : (
+              <>
+                <span className="font-black text-primary">{route.distanceKm}</span>
+                <span className="text-slate-300">·</span>
+                <span className="font-semibold text-secondary">{route.durationMin}</span>
+              </>
+            )}
             <span>🏠</span>
-            {route.isStraightLine && (
-              <span className="text-slate-400 text-xs">(straight line)</span>
+            {route.isStraightLine && !isDelivered && (
+              <span className="text-slate-400 text-xs">(est.)</span>
             )}
           </div>
         </div>

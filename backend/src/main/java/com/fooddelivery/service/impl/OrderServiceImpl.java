@@ -339,6 +339,7 @@ public class OrderServiceImpl implements OrderService {
                 .restaurantId(o.getRestaurant().getId())
                 .restaurantName(o.getRestaurant().getName())
                 .restaurantAddress(o.getRestaurant().getAddress() + ", " + o.getRestaurant().getCity())
+                .restaurantDeliveryTime(o.getRestaurant().getDeliveryTime())
                 .deliveryAgentId(o.getDeliveryAgent() != null
                         ? o.getDeliveryAgent().getId() : null)
                 .deliveryAgentName(o.getDeliveryAgent() != null

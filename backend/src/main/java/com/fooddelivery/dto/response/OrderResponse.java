@@ -20,6 +20,7 @@ public class OrderResponse {
     private Long                    restaurantId;
     private String                  restaurantName;
     private String                  restaurantAddress;   // full address for map routing
+    private Integer                 restaurantDeliveryTime; // minutes — for ETA countdown
     private Long                    deliveryAgentId;
     private String                  deliveryAgentName;
     private String                  deliveryAddress;
