@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useToast } from '../../context/ToastContext'
 import deliveryService from '../../services/deliveryService'
+import { geocodeAddress, getDrivingRoute } from '../../services/geoService'
 import Loader from '../../components/common/Loader'
 
 const STATUS_STYLE = {
@@ -31,19 +32,57 @@ const formatCountdown = (secs) => {
 
 /** Per-order countdown — own component so it re-renders independently */
 const DeliveryTimer = ({ order, onMarkDelivered, marking }) => {
-  const totalMins   = order.restaurantDeliveryTime || 30
-  const [secs, setSecs] = useState(() => calcSecsLeft(order.updatedAt, totalMins))
-  const timerRef    = useRef(null)
+  const dbMins    = order.restaurantDeliveryTime || 30
+  const [totalMins, setTotalMins] = useState(dbMins)
+  const totalMinsRef = useRef(dbMins)          // ← always current for the interval closure
+  const [routeResolved, setRouteResolved] = useState(false)
+  const [secs, setSecs] = useState(() => calcSecsLeft(order.updatedAt, dbMins))
+  const timerRef  = useRef(null)
 
+  // ── Geocode + route calculation ──────────────────────────────
   useEffect(() => {
     if (order.status !== 'OUT_FOR_DELIVERY') return
+    if (!order.restaurantAddress || !order.deliveryAddress) return
+
+    let cancelled = false
+
+    const fetchRoute = async () => {
+      try {
+        const [origin, dest] = await Promise.all([
+          geocodeAddress(order.restaurantAddress),
+          geocodeAddress(order.deliveryAddress),
+        ])
+        if (cancelled || !origin || !dest) return
+
+        const route = await getDrivingRoute(origin, dest)
+        if (cancelled || !route) return
+
+        const mins = parseInt(route.durationMin, 10)
+        if (!isNaN(mins) && mins > 0) {
+          totalMinsRef.current = mins          // update ref first
+          setTotalMins(mins)                   // then state for render
+          setSecs(calcSecsLeft(order.updatedAt, mins))
+          setRouteResolved(true)
+        }
+      } catch { /* keep DB estimate */ }
+    }
+
+    fetchRoute()
+    return () => { cancelled = true }
+  }, [order.id, order.restaurantAddress, order.deliveryAddress, order.updatedAt, order.status])
+
+  // ── Second-by-second tick — reads from ref, never stale ──────
+  useEffect(() => {
+    if (order.status !== 'OUT_FOR_DELIVERY') return
+    clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      const left = calcSecsLeft(order.updatedAt, totalMins)
+      const left = calcSecsLeft(order.updatedAt, totalMinsRef.current)
       setSecs(left)
       if (left === 0) clearInterval(timerRef.current)
     }, 1000)
     return () => clearInterval(timerRef.current)
-  }, [order.id, order.updatedAt, totalMins, order.status])
+  }, [order.id, order.updatedAt, order.status])
+  // Note: totalMins NOT in deps — interval reads from ref, not closure state
 
   const fee         = Number(order.deliveryFee ?? 40)
   const isActive    = order.status === 'OUT_FOR_DELIVERY'
@@ -60,7 +99,9 @@ const DeliveryTimer = ({ order, onMarkDelivered, marking }) => {
         <div className="mb-4">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-semibold text-slate-500">
-              {timeUp ? '🎉 Estimated delivery time reached!' : `⏱ Estimated: ${totalMins} mins`}
+              {timeUp
+                ? '🎉 Estimated delivery time reached!'
+                : `⏱ Estimated: ${totalMins} min${totalMins !== 1 ? 's' : ''}${routeResolved ? ' (route)' : ''}`}
             </span>
             <span className={`text-xs font-black ${timeUp ? 'text-green-600 animate-pulse' : 'text-primary'}`}>
               {timeUp ? 'Time is up!' : countdown + ' left'}

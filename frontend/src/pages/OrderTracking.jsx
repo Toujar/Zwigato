@@ -42,19 +42,18 @@ const OrderTracking = () => {
   const { id }                  = useParams()
   const [order, setOrder]       = useState(null)
   const [loading, setLoading]   = useState(true)
-  // Live countdown for OUT_FOR_DELIVERY
+  // routeDurationMins — real driving time from ORS, stored in BOTH state (for render) and ref (for closures)
+  const [routeMins, setRouteMins] = useState(null)
+  const routeMinsRef            = useRef(null)   // ← always current, readable from any closure
   const [secsLeft, setSecsLeft] = useState(null)
   const pollRef                 = useRef(null)
   const countdownRef            = useRef(null)
+  const orderRef                = useRef(null)   // latest order, for handleRouteCalculated
 
-  const startCountdown = useCallback((ord) => {
+  const startCountdown = useCallback((ord, mins) => {
     if (ord?.status !== 'OUT_FOR_DELIVERY') return
-    const total = ord.restaurantDeliveryTime || 30
-
-    // Initialise
+    const total = mins || ord.restaurantDeliveryTime || 30
     setSecsLeft(calcSecondsLeft(ord.updatedAt, total))
-
-    // Tick every second
     clearInterval(countdownRef.current)
     countdownRef.current = setInterval(() => {
       setSecsLeft(calcSecondsLeft(ord.updatedAt, total))
@@ -66,12 +65,14 @@ const OrderTracking = () => {
     try {
       const data = await orderService.getOrderById(id)
       setOrder(data)
+      orderRef.current = data
       if (data?.status === 'DELIVERED' || data?.status === 'CANCELLED') {
         clearInterval(pollRef.current)
         clearInterval(countdownRef.current)
         setSecsLeft(null)
       } else if (data?.status === 'OUT_FOR_DELIVERY') {
-        startCountdown(data)
+        // Read from ref — always the latest value, never stale from closure
+        startCountdown(data, routeMinsRef.current)
       } else {
         clearInterval(countdownRef.current)
         setSecsLeft(null)
@@ -81,7 +82,17 @@ const OrderTracking = () => {
     } finally {
       if (initial) setLoading(false)
     }
-  }, [id, startCountdown])
+  }, [id, startCountdown])  // routeMinsRef is a ref — no dependency needed
+
+  // When the map resolves the real route time, update both state and ref, restart countdown
+  const handleRouteCalculated = useCallback((mins) => {
+    routeMinsRef.current = mins          // update ref immediately — no re-render delay
+    setRouteMins(mins)                   // update state for render
+    const ord = orderRef.current
+    if (ord?.status === 'OUT_FOR_DELIVERY') {
+      startCountdown(ord, mins)          // restart countdown with real time
+    }
+  }, [startCountdown])
 
   useEffect(() => {
     fetchOrder(true).then(() => {
@@ -103,7 +114,7 @@ const OrderTracking = () => {
   const activeMsg   = STATUS_MESSAGES[order.status]
 
   // Progress 0→1 for the map to scale distance/time display
-  const totalSecs   = (order.restaurantDeliveryTime || 30) * 60
+  const totalSecs   = (routeMins || order.restaurantDeliveryTime || 30) * 60
   const progress    = isOnWay && secsLeft != null
     ? Math.max(0, Math.min(1, 1 - secsLeft / totalSecs))
     : (isDelivered ? 1 : 0)
@@ -218,6 +229,7 @@ const OrderTracking = () => {
               restaurantName={order.restaurantName}
               orderStatus={order.status}
               deliveryProgress={progress}
+              onRouteCalculated={handleRouteCalculated}
               height="320px"
             />
           </Suspense>
@@ -256,7 +268,7 @@ const OrderTracking = () => {
                 {secsLeft === 0 ? 'Arriving now!' : formatTime(secsLeft)}
               </p>
               <p className="text-slate-400 text-xs mt-0.5">
-                {order.restaurantDeliveryTime || 30} min estimated total
+                {routeMins || order.restaurantDeliveryTime || 30} min estimated total
               </p>
             </div>
           ) : (

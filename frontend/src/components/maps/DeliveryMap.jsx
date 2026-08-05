@@ -64,10 +64,11 @@ const FitBounds = ({ positions }) => {
 const DeliveryMap = ({
   restaurantAddress,
   deliveryAddress,
-  restaurantName = 'Restaurant',
-  orderStatus    = null,
-  deliveryProgress = 0,   // 0→1 — how far along the delivery is (drives distance/time display)
-  height = '380px',
+  restaurantName   = 'Restaurant',
+  orderStatus      = null,
+  deliveryProgress = 0,
+  onRouteCalculated = null,   // (durationMinutes: number) => void  — fires once when route is ready
+  height           = '380px',
 }) => {
   const isDelivered = orderStatus === 'DELIVERED'
   const isCancelled = orderStatus === 'CANCELLED'
@@ -123,9 +124,17 @@ const DeliveryMap = ({
         error:   null,
         originCoords: resolvedOrigin,
         destCoords:   resolvedDest,
-        partial,       // true if one address fell back to city centre
+        partial,
         route,
       })
+
+      // Fire callback with the real driving duration so the parent
+      // countdown uses actual route time instead of the DB estimate.
+      if (route && onRouteCalculated) {
+        // durationMin is e.g. "16 mins" or "~18 mins" — parse the number
+        const mins = parseInt(route.durationMin, 10)
+        if (!isNaN(mins) && mins > 0) onRouteCalculated(mins)
+      }
     }
 
     load()
