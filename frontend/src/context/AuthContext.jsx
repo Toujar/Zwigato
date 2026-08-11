@@ -1,16 +1,9 @@
 /**
  * AuthContext
  *
- * Stores the authenticated user and JWT token in localStorage via
- * useLocalStorage so the session survives page refreshes.
- *
- * The backend returns AuthResponse:
- *   { accessToken, refreshToken, tokenType, expiresIn, user }
- *
- * login(authResponse) — accepts the full AuthResponse from the backend
- *                        and extracts accessToken + user.
- * logout()            — clears both keys.
- * isAuthenticated     — true when a token exists.
+ * Stores access token, refresh token, and user in localStorage.
+ * The refresh token is read by api.js interceptor to silently
+ * refresh the access token when it expires (24h window).
  */
 import { createContext, useContext } from 'react'
 import { useLocalStorage } from '../hooks/useLocalStorage'
@@ -18,27 +11,17 @@ import { useLocalStorage } from '../hooks/useLocalStorage'
 const AuthContext = createContext()
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useLocalStorage('user', null)
-  const [token, setToken] = useLocalStorage('token', null)
+  const [user,         setUser]         = useLocalStorage('user',         null)
+  const [token,        setToken]        = useLocalStorage('token',        null)
+  const [refreshToken, setRefreshToken] = useLocalStorage('refreshToken', null)
 
-  /**
-   * Call this after a successful login or register.
-   * Accepts the full AuthResponse object from the backend.
-   *
-   * @param {AuthResponse} authResponse  - { accessToken, user, ... }
-   */
   const login = (authResponse) => {
-    // Support both formats:
-    //   login(authResponse)         — full AuthResponse object (normal flow)
-    //   login(userObj, tokenStr)    — legacy / demo mode fallback
-    if (authResponse && authResponse.accessToken) {
+    if (authResponse?.accessToken) {
       setToken(authResponse.accessToken)
+      setRefreshToken(authResponse.refreshToken || null)
       setUser(authResponse.user)
-    } else if (typeof authResponse === 'object' && arguments.length >= 2) {
-      // eslint-disable-next-line prefer-rest-params
-      setUser(authResponse)
-      setToken(arguments[1])
     } else {
+      // Legacy fallback (profile update path)
       setUser(authResponse)
     }
   }
@@ -46,12 +29,13 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null)
     setToken(null)
+    setRefreshToken(null)
   }
 
   const isAuthenticated = !!token
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, token, refreshToken, isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

@@ -40,6 +40,23 @@ const authService = {
       headers: { 'Refresh-Token': refreshToken },
     })
   },
+
+  // ── Password reset ────────────────────────────────────────────
+  forgotPassword: async (email) =>
+    api.post('/auth/forgot-password', { email }),
+
+  verifyResetToken: async (token) =>
+    api.post('/auth/verify-reset-token', { token }),
+
+  resetPassword: async (token, newPassword) =>
+    api.post('/auth/reset-password', { token, newPassword }),
+
+  // ── OTP ──────────────────────────────────────────────────────
+  sendOtp: async (email) =>
+    api.post('/auth/otp/send', { email }),
+
+  verifyOtp: async (email, otp) =>
+    api.post('/auth/otp/verify', { email, otp }),
 }
 
 export default authService

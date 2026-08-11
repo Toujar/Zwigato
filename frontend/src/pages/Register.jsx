@@ -27,8 +27,16 @@ const Register = () => {
     try {
       const authResponse = await authService.register({ name, email, phone, password })
       login(authResponse)
-      toast.success(`Welcome, ${authResponse.user?.name || name}! Account created.`)
-      navigate('/', { replace: true })
+      toast.success(`Welcome, ${authResponse.user?.name || name}!`)
+
+      // Send OTP for email/phone verification (non-blocking — user can skip)
+      try {
+        await authService.sendOtp(email)
+        navigate('/verify-otp', { state: { email }, replace: true })
+      } catch {
+        // OTP failed (email not configured) — still proceed to home
+        navigate('/', { replace: true })
+      }
     } catch (err) {
       toast.error(err.message || 'Registration failed. Please try again.')
     } finally {

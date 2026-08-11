@@ -93,8 +93,8 @@ public class SecurityConfig {
                 ).permitAll()
 
                 // ---------- Auth endpoints (no token needed) ----------
-                // NOTE: Spring Security matches against the path AFTER the
-                // context-path (/api) is stripped, so use paths without /api prefix.
+                // NOTE: Paths here are relative to the servlet context (/api),
+                // so Spring Security sees them WITHOUT the /api prefix.
                 .requestMatchers("/auth/**").permitAll()
 
                 // ---------- Public read — Restaurants -----------------

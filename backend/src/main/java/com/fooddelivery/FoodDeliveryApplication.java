@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
  */
 @SpringBootApplication
 @EnableJpaAuditing
+@org.springframework.scheduling.annotation.EnableAsync
 public class FoodDeliveryApplication {
 
     public static void main(String[] args) {

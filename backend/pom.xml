@@ -120,6 +120,18 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Email — password reset + OTP verification -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- Google OAuth2 / Social Login -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+
         <!-- ── Redis + Spring Cache ──────────────────────────────── -->
         <!--
             spring-boot-starter-data-redis : Lettuce async client + Spring Data Redis
