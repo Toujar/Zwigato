@@ -1,75 +1,60 @@
 package com.fooddelivery.service;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
+import jakarta.mail.MessagingException;
 
 /**
- * Sends transactional emails for:
- *  - Password reset links
- *  - OTP verification codes
+ * Contract for email delivery operations.
  *
- * All sends are @Async so they don't block the request thread.
- * If mail is not configured, errors are logged but not propagated.
+ * Used by: Invoice service, Password reset, OTP verification, Order notifications.
+ * Abstracts email sending to support different providers (SMTP, SendGrid, AWS SES).
  */
-@Slf4j
-@Service
-@RequiredArgsConstructor
-public class EmailService {
+public interface EmailService {
 
-    private final JavaMailSender mailSender;
+    /**
+     * Sends invoice PDF via email to customer.
+     *
+     * @param customerEmail recipient email address
+     * @param invoiceNumber invoice number for subject/reference
+     * @param pdfFilePath path or URL to PDF file
+     * @throws MessagingException if email sending fails
+     */
+    void sendInvoiceEmail(String customerEmail, String invoiceNumber, String pdfFilePath) throws MessagingException;
 
-    @Value("${spring.mail.username}")
-    private String fromAddress;
+    /**
+     * Sends password reset email.
+     *
+     * @param customerEmail recipient email address
+     * @param resetLink password reset link
+     * @param userName user's name for personalization
+     * @throws MessagingException if email sending fails
+     */
+    void sendPasswordResetEmail(String customerEmail, String resetLink, String userName) throws MessagingException;
 
-    @Value("${app.frontend.url:http://localhost:5173}")
-    private String frontendUrl;
+    /**
+     * Sends OTP verification email.
+     *
+     * @param customerEmail recipient email address
+     * @param otp one-time password
+     * @param userName user's name for personalization
+     * @throws MessagingException if email sending fails
+     */
+    void sendOtpEmail(String customerEmail, String otp, String userName) throws MessagingException;
 
-    @Async
-    public void sendPasswordResetEmail(String toEmail, String resetToken, String userName) {
-        try {
-            String resetLink = frontendUrl + "/reset-password?token=" + resetToken;
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(fromAddress);
-            msg.setTo(toEmail);
-            msg.setSubject("Zwigato — Reset Your Password");
-            msg.setText(
-                "Hi " + userName + ",\n\n" +
-                "We received a request to reset your Zwigato password.\n\n" +
-                "Click the link below to set a new password (valid for 15 minutes):\n\n" +
-                resetLink + "\n\n" +
-                "If you did not request this, you can safely ignore this email.\n\n" +
-                "— The Zwigato Team"
-            );
-            mailSender.send(msg);
-            log.info("Password reset email sent to {}", toEmail);
-        } catch (Exception e) {
-            log.error("Failed to send password reset email to {}: {}", toEmail, e.getMessage());
-        }
-    }
+    /**
+     * Sends order confirmation email.
+     *
+     * @param customerEmail recipient email address
+     * @param orderId order ID for reference
+     * @throws MessagingException if email sending fails
+     */
+    void sendOrderConfirmationEmail(String customerEmail, Long orderId) throws MessagingException;
 
-    @Async
-    public void sendOtpEmail(String toEmail, String otp, String userName) {
-        try {
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(fromAddress);
-            msg.setTo(toEmail);
-            msg.setSubject("Zwigato — Your Verification Code");
-            msg.setText(
-                "Hi " + userName + ",\n\n" +
-                "Your Zwigato verification code is:\n\n" +
-                "  " + otp + "\n\n" +
-                "This code is valid for 10 minutes. Do not share it with anyone.\n\n" +
-                "— The Zwigato Team"
-            );
-            mailSender.send(msg);
-            log.info("OTP email sent to {}", toEmail);
-        } catch (Exception e) {
-            log.error("Failed to send OTP email to {}: {}", toEmail, e.getMessage());
-        }
-    }
+    /**
+     * Sends order delivery email.
+     *
+     * @param customerEmail recipient email address
+     * @param orderId order ID for reference
+     * @throws MessagingException if email sending fails
+     */
+    void sendOrderDeliveryEmail(String customerEmail, Long orderId) throws MessagingException;
 }

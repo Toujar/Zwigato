@@ -20,4 +20,14 @@ public interface OrderService {
     OrderResponse updateOrderStatus(Long id, OrderStatus newStatus);
 
     OrderResponse cancelOrder(Long id);
+
+    /**
+     * Reorder — Copies items from a past order into the cart.
+     * Allows the customer to place a repeat order with one click.
+     *
+     * @param orderId the ID of the previous order to reorder from
+     * @return confirmation response
+     * @throws ResourceNotFoundException if order not found or user doesn't own it
+     */
+    OrderResponse reorderFromPastOrder(Long orderId);
 }

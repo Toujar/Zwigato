@@ -118,6 +118,10 @@ public class CartServiceImpl implements CartService {
                     .foodItem(foodItem)
                     .quantity(request.getQuantity())
                     .unitPrice(foodItem.getPrice())   // price snapshot
+                    .size(request.getSize())
+                    .spiceLevel(request.getSpiceLevel())
+                    .addOns(request.getAddOns())
+                    .specialInstructions(request.getSpecialInstructions())
                     .build();
             cartItemRepository.save(newItem);
             log.debug("Cart item added: foodItem={}", foodItem.getId());
@@ -197,6 +201,29 @@ public class CartServiceImpl implements CartService {
     }
 
     // ---------------------------------------------------------------
+    // Conflict detection
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasConflictingRestaurant(Long foodItemId) {
+        User currentUser = securityUtils.getCurrentUser();
+        
+        Cart cart = cartRepository.findByUser_Id(currentUser.getId()).orElse(null);
+        if (cart == null || cart.getRestaurant() == null) {
+            // No items in cart or cart not locked → no conflict
+            return false;
+        }
+
+        FoodItem foodItem = foodItemRepository.findById(foodItemId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "FoodItem", "id", foodItemId));
+
+        // Return true if adding this item would conflict with cart's restaurant
+        return !cart.getRestaurant().getId().equals(foodItem.getRestaurant().getId());
+    }
+
+    // ---------------------------------------------------------------
     // Private helpers
     // ---------------------------------------------------------------
 
@@ -255,6 +282,10 @@ public class CartServiceImpl implements CartService {
                 .quantity(ci.getQuantity())
                 .unitPrice(ci.getUnitPrice())
                 .subtotal(ci.getSubtotal())        // computed in entity
+                .size(ci.getSize())
+                .spiceLevel(ci.getSpiceLevel())
+                .addOns(ci.getAddOns())
+                .specialInstructions(ci.getSpecialInstructions())
                 .build();
     }
 }

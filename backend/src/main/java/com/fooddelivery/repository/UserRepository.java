@@ -218,4 +218,42 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * SQL: SELECT COUNT(*) FROM users WHERE role = ?
      */
     long countByRole(UserRole role);
+
+    // ----------------------------------------------------------
+    // 7. Admin Dashboard Queries
+    // ----------------------------------------------------------
+
+    /**
+     * Find users by role and active status (paginated).
+     */
+    Page<User> findByRoleAndIsActive(UserRole role, Boolean isActive, Pageable pageable);
+
+    /**
+     * Search users by name or email (paginated).
+     */
+    Page<User> findByNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
+        String name, String email, Pageable pageable
+    );
+
+    /**
+     * Complex filter: role + active + search.
+     */
+    Page<User> findByRoleAndIsActiveAndNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
+        UserRole role, Boolean isActive, String name, String email, Pageable pageable
+    );
+
+    /**
+     * Find users by active status only (paginated).
+     */
+    Page<User> findByIsActive(Boolean isActive, Pageable pageable);
+
+    /**
+     * Count users created within date range.
+     */
+    Long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    /**
+     * Count users by role created within date range.
+     */
+    Long countByRoleAndCreatedAtBetween(UserRole role, LocalDateTime start, LocalDateTime end);
 }

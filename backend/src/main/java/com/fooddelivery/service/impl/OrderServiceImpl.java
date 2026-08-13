@@ -12,6 +12,7 @@ import com.fooddelivery.exception.BadRequestException;
 import com.fooddelivery.exception.ResourceNotFoundException;
 import com.fooddelivery.exception.UnauthorizedException;
 import com.fooddelivery.repository.*;
+import com.fooddelivery.service.InvoiceService;
 import com.fooddelivery.service.OrderService;
 import com.fooddelivery.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -54,6 +56,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartRepository       cartRepository;
     private final CartItemRepository   cartItemRepository;
     private final SecurityUtils        securityUtils;
+    private final InvoiceService       invoiceService;
 
     // ---------------------------------------------------------------
     // Place order
@@ -219,6 +222,17 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(newStatus);
         Order saved = orderRepository.save(order);
 
+        // Generate invoice when order is delivered
+        if (newStatus == OrderStatus.DELIVERED) {
+            try {
+                invoiceService.generateInvoice(saved);
+                log.info("Invoice generated for delivered order {}", id);
+            } catch (IOException e) {
+                log.error("Failed to generate invoice for order {}: {}", id, e.getMessage());
+                // Invoice generation failure should not block order status update
+            }
+        }
+
         log.info("Order {} status changed: {} → {} by {}",
                 id, previousStatus, newStatus, currentUser.getEmail());
         return toResponse(saved);
@@ -254,6 +268,69 @@ public class OrderServiceImpl implements OrderService {
 
         log.info("Order {} cancelled by user {}", id, currentUser.getEmail());
         return toResponse(saved);
+    }
+
+    // ---------------------------------------------------------------
+    // Reorder from past order
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional
+    public OrderResponse reorderFromPastOrder(Long orderId) {
+        User currentUser = securityUtils.getCurrentUser();
+
+        Order pastOrder = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
+
+        // Only the customer who placed the order can reorder
+        if (!pastOrder.getUser().getId().equals(currentUser.getId())) {
+            throw new UnauthorizedException("You are not authorised to reorder from this order");
+        }
+
+        // Get or create cart for current user
+        Cart cart = cartRepository.findByUser_Id(currentUser.getId())
+                .orElseGet(() -> Cart.builder().user(currentUser).build());
+
+        // If cart has items from a different restaurant, clear it first
+        if (cart.getRestaurant() != null 
+                && !cart.getRestaurant().getId().equals(pastOrder.getRestaurant().getId())) {
+            cartItemRepository.deleteByCart_Id(cart.getId());
+            cart.setRestaurant(null);
+        }
+
+        // Lock cart to the same restaurant
+        cart.setRestaurant(pastOrder.getRestaurant());
+        cart = cartRepository.save(cart);
+
+        // Copy items from past order into cart (preserving customizations)
+        for (OrderItem orderItem : pastOrder.getOrderItems()) {
+            // Check if this item already exists in cart
+            CartItem existingItem = cartItemRepository
+                    .findByCart_IdAndFoodItem_Id(cart.getId(), orderItem.getFoodItem().getId())
+                    .orElse(null);
+
+            if (existingItem != null) {
+                // Increment quantity
+                existingItem.incrementQuantity(orderItem.getQuantity());
+                cartItemRepository.save(existingItem);
+            } else {
+                // Create new cart item with same customizations
+                CartItem newItem = CartItem.builder()
+                        .cart(cart)
+                        .foodItem(orderItem.getFoodItem())
+                        .quantity(orderItem.getQuantity())
+                        .unitPrice(orderItem.getFoodItem().getPrice())  // use current price, not historical
+                        .size(orderItem.getSize())
+                        .spiceLevel(orderItem.getSpiceLevel())
+                        .addOns(orderItem.getAddOns())
+                        .specialInstructions(orderItem.getSpecialInstructions())
+                        .build();
+                cartItemRepository.save(newItem);
+            }
+        }
+
+        log.info("User {} reordered from order {}", currentUser.getEmail(), orderId);
+        return toResponse(pastOrder);
     }
 
     // ---------------------------------------------------------------
@@ -369,6 +446,10 @@ public class OrderServiceImpl implements OrderService {
                 .quantity(oi.getQuantity())
                 .unitPrice(oi.getUnitPrice())
                 .subtotal(oi.getSubtotal())
+                .size(oi.getSize())
+                .spiceLevel(oi.getSpiceLevel())
+                .addOns(oi.getAddOns())
+                .specialInstructions(oi.getSpecialInstructions())
                 .build();
     }
 

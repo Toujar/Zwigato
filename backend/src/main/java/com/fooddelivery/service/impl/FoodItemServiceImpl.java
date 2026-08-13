@@ -336,4 +336,18 @@ public class FoodItemServiceImpl implements FoodItemService {
                 .createdAt(f.getCreatedAt())
                 .build();
     }
+
+    // ---------------------------------------------------------------
+    // Platform-wide search
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<FoodItemResponse> searchAllFoodItems(String keyword) {
+        return foodItemRepository
+                .searchAllAvailableByName(keyword.trim(), org.springframework.data.domain.Pageable.unpaged())
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
 }

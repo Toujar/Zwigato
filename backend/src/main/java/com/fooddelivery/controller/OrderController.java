@@ -193,4 +193,32 @@ public class OrderController {
         return ResponseEntity.ok(ApiResponse.success(
                 orderService.cancelOrder(id), "Order cancelled successfully"));
     }
+
+    // ----------------------------------------------------------------
+    // POST /api/orders/{id}/reorder  — CUSTOMER only
+    // ----------------------------------------------------------------
+    @PostMapping("/{id}/reorder")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+        summary     = "Reorder from past order (CUSTOMER only)",
+        description = "Copies all items from a past order into the cart. "
+                    + "Preserves customizations (size, spice level, add-ons, special instructions). "
+                    + "If the cart has items from a different restaurant, "
+                    + "the cart will be cleared first. "
+                    + "Returns the updated cart response. "
+                    + "Returns 403 if the order doesn't belong to the current user."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Items added to cart"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Not the order owner"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Order not found")
+    })
+    public ResponseEntity<ApiResponse<OrderResponse>> reorder(
+            @Parameter(description = "Order ID to reorder from", required = true)
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                orderService.reorderFromPastOrder(id),
+                "Order items added to cart. Ready to proceed to checkout."));
+    }
 }

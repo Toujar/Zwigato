@@ -44,7 +44,8 @@ import java.util.List;
         @Index(name = "idx_restaurants_owner_id",  columnList = "owner_id"),
         @Index(name = "idx_restaurants_city",      columnList = "city"),
         @Index(name = "idx_restaurants_is_active", columnList = "is_active"),
-        @Index(name = "idx_restaurants_is_open",   columnList = "is_open")
+        @Index(name = "idx_restaurants_is_open",   columnList = "is_open"),
+        @Index(name = "idx_restaurants_coordinates", columnList = "latitude,longitude")
     }
 )
 @EntityListeners(AuditingEntityListener.class)
@@ -141,6 +142,14 @@ public class Restaurant {
     private BigDecimal rating = BigDecimal.ZERO;
 
     /**
+     * Count of total reviews received.
+     * Used to show "Based on 1,234 ratings" or similar.
+     */
+    @Column(name = "review_count", nullable = false)
+    @Builder.Default
+    private Integer reviewCount = 0;
+
+    /**
      * Estimated delivery time in minutes shown to customers.
      * Minimum of 1 minute required.
      */
@@ -173,6 +182,47 @@ public class Restaurant {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private Boolean isActive = true;
+
+    // ----------------------------------------------------------
+    // Location & Delivery
+    // ----------------------------------------------------------
+
+    /**
+     * Latitude coordinate for geolocation-based search.
+     * Used to calculate distance from user's location.
+     */
+    @Column(name = "latitude")
+    private Double latitude;
+
+    /**
+     * Longitude coordinate for geolocation-based search.
+     * Used to calculate distance from user's location.
+     */
+    @Column(name = "longitude")
+    private Double longitude;
+
+    /**
+     * Delivery fee charged to customers.
+     */
+    @DecimalMin(value = "0.0", message = "Delivery fee cannot be negative")
+    @Column(name = "delivery_fee", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal deliveryFee = BigDecimal.ZERO;
+
+    /**
+     * Delivery radius in kilometers.
+     */
+    @Min(value = 1, message = "Delivery radius must be at least 1 km")
+    @Column(name = "delivery_radius", nullable = false)
+    @Builder.Default
+    private Integer deliveryRadius = 5;
+
+    /**
+     * Operating hours in JSON format.
+     * Example: {"monday": "09:00-22:00", "tuesday": "09:00-22:00", ...}
+     */
+    @Column(name = "operating_hours", columnDefinition = "TEXT")
+    private String operatingHours;
 
     // ----------------------------------------------------------
     // Auditing
@@ -220,5 +270,40 @@ public class Restaurant {
     public void removeFoodItem(FoodItem item) {
         foodItems.remove(item);
         item.setRestaurant(null);
+    }
+
+    /**
+     * Calculate distance from user coordinates using Haversine formula.
+     * Returns distance in kilometers.
+     *
+     * @param userLatitude user's latitude
+     * @param userLongitude user's longitude
+     * @return distance in km, or Double.MAX_VALUE if coordinates are missing
+     */
+    public Double calculateDistance(Double userLatitude, Double userLongitude) {
+        if (latitude == null || longitude == null) {
+            return Double.MAX_VALUE;
+        }
+
+        final int R = 6371; // Radius of the earth in km
+        double latDistance = Math.toRadians(userLatitude - latitude);
+        double lonDistance = Math.toRadians(userLongitude - longitude);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(latitude)) * Math.cos(Math.toRadians(userLatitude))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c; // Distance in km
+    }
+
+    /**
+     * Check if restaurant is within delivery radius of user.
+     *
+     * @param userLatitude user's latitude
+     * @param userLongitude user's longitude
+     * @return true if within delivery radius
+     */
+    public Boolean isWithinDeliveryRadius(Double userLatitude, Double userLongitude) {
+        Double distance = calculateDistance(userLatitude, userLongitude);
+        return distance <= deliveryRadius;
     }
 }

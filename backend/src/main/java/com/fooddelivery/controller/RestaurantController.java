@@ -210,4 +210,66 @@ public class RestaurantController {
                 : "Restaurant is now closed";
         return ResponseEntity.ok(ApiResponse.success(r, msg));
     }
+
+    // ----------------------------------------------------------------
+    // GET /api/restaurants/nearby  — PUBLIC (Location-based search)
+    // ----------------------------------------------------------------
+    @GetMapping("/nearby")
+    @Operation(
+        summary     = "Get nearby restaurants by location",
+        description = "Returns restaurants near the user's coordinates, sorted by distance. "
+                    + "Optional city filter and latitude/longitude."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Nearby restaurants returned")
+    })
+    public ResponseEntity<ApiResponse<Page<RestaurantResponse>>> getNearby(
+            @Parameter(description = "Page number (0-indexed)")
+            @RequestParam(defaultValue = AppConstants.DEFAULT_PAGE_NUMBER) int page,
+            @Parameter(description = "Page size")
+            @RequestParam(defaultValue = AppConstants.DEFAULT_PAGE_SIZE) int size,
+            @Parameter(description = "User's latitude")
+            @RequestParam(required = false) Double latitude,
+            @Parameter(description = "User's longitude")
+            @RequestParam(required = false) Double longitude,
+            @Parameter(description = "City to filter by")
+            @RequestParam(required = false) String city) {
+
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "name"));
+        Page<RestaurantResponse> result = restaurantService.getNearbyRestaurants(
+                latitude, longitude, city, pageable);
+
+        return ResponseEntity.ok(ApiResponse.success(result, "Nearby restaurants retrieved successfully"));
+    }
+
+    // ----------------------------------------------------------------
+    // GET /api/restaurants/search/all  — PUBLIC (Platform-wide search)
+    // ----------------------------------------------------------------
+    @GetMapping("/search/all")
+    @Operation(
+        summary     = "Search restaurants across all cities",
+        description = "Returns restaurants matching the keyword from all cities. "
+                    + "Can optionally filter by location proximity."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Search results returned")
+    })
+    public ResponseEntity<ApiResponse<Page<RestaurantResponse>>> searchAll(
+            @Parameter(description = "Search keyword")
+            @RequestParam String keyword,
+            @Parameter(description = "Page number (0-indexed)")
+            @RequestParam(defaultValue = AppConstants.DEFAULT_PAGE_NUMBER) int page,
+            @Parameter(description = "Page size")
+            @RequestParam(defaultValue = AppConstants.DEFAULT_PAGE_SIZE) int size,
+            @Parameter(description = "User's latitude for distance sorting")
+            @RequestParam(required = false) Double latitude,
+            @Parameter(description = "User's longitude for distance sorting")
+            @RequestParam(required = false) Double longitude) {
+
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "name"));
+        Page<RestaurantResponse> result = restaurantService.searchAllRestaurants(
+                keyword, latitude, longitude, pageable);
+
+        return ResponseEntity.ok(ApiResponse.success(result, "Search results retrieved successfully"));
+    }
 }

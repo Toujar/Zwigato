@@ -364,4 +364,48 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("restaurantId") Long restaurantId,
             @Param("from")         LocalDateTime from,
             @Param("to")           LocalDateTime to);
+
+    // ----------------------------------------------------------
+    // 9. Admin Dashboard Additional Queries
+    // ----------------------------------------------------------
+
+    /**
+     * Count orders by status.
+     */
+    Long countByStatus(OrderStatus status);
+
+    /**
+     * Count orders placed within date range.
+     */
+    Long countByPlacedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    /**
+     * Count orders by status within date range.
+     */
+    Long countByStatusAndPlacedAtBetween(OrderStatus status, LocalDateTime start, LocalDateTime end);
+
+    /**
+     * Find orders by status.
+     */
+    List<Order> findByStatus(OrderStatus status);
+
+    /**
+     * Find orders by status and date range.
+     */
+    List<Order> findByStatusAndPlacedAtBetween(OrderStatus status, LocalDateTime start, LocalDateTime end);
+
+    /**
+     * Find recent orders (top 10 by placement time).
+     */
+    List<Order> findTop10ByOrderByPlacedAtDesc();
+
+    /**
+     * Count orders by user ID.
+     */
+    Long countByUserId(Long userId);
+
+    /**
+     * Count orders by delivery agent ID.
+     */
+    Long countByDeliveryAgentId(Long agentId);
 }

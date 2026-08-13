@@ -15,4 +15,10 @@ public class CartItemRequest {
 
     @Min(value = 1, message = "Quantity must be at least 1")
     private int quantity;
+
+    // Customization fields
+    private String size;           // e.g., "small", "medium", "large"
+    private String spiceLevel;     // e.g., "mild", "medium", "hot"
+    private String addOns;         // e.g., "extra_cheese,bacon"
+    private String specialInstructions;  // e.g., "No onions, extra sauce"
 }

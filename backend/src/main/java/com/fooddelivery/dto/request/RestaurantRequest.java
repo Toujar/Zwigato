@@ -38,4 +38,21 @@ public class RestaurantRequest {
 
     @DecimalMin("0.0")
     private BigDecimal minOrderAmount;
+
+    // New location fields
+    private Double latitude;
+
+    private Double longitude;
+
+    @DecimalMin("0.0")
+    private BigDecimal deliveryFee;
+
+    @Min(1)
+    private Integer deliveryRadius;
+
+    /**
+     * Operating hours in JSON format.
+     * Example: {"monday": "09:00-22:00", "tuesday": "09:00-22:00", ...}
+     */
+    private String operatingHours;
 }

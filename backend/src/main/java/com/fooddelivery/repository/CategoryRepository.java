@@ -150,4 +150,13 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
      */
     @Query("SELECT c, COUNT(f) FROM Category c LEFT JOIN c.foodItems f GROUP BY c ORDER BY c.name ASC")
     List<Object[]> findAllWithFoodItemCount();
+
+    // ----------------------------------------------------------
+    // 7. Admin Pageable Methods
+    // ----------------------------------------------------------
+
+    /**
+     * Find categories by active status (paginated).
+     */
+    org.springframework.data.domain.Page<Category> findByIsActive(Boolean isActive, org.springframework.data.domain.Pageable pageable);
 }

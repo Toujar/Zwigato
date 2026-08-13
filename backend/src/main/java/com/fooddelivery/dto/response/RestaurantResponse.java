@@ -35,6 +35,12 @@ public class RestaurantResponse {
     private BigDecimal    rating;
     private Integer       deliveryTime;
     private BigDecimal    minOrderAmount;
+    private BigDecimal    deliveryFee;
+    private Integer       deliveryRadius;
+    private Double        latitude;
+    private Double        longitude;
+    private String        operatingHours;
+    private Double        distance; // Distance from user (calculated at request time)
     private Boolean       isOpen;
     private Boolean       isActive;
     private LocalDateTime createdAt;

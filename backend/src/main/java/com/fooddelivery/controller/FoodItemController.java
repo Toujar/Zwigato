@@ -196,4 +196,24 @@ public class FoodItemController {
                 : "Food item is now unavailable";
         return ResponseEntity.ok(ApiResponse.success(item, msg));
     }
+
+    // ----------------------------------------------------------------
+    // GET /api/food-items/search/all  — PUBLIC (Platform-wide search)
+    // ----------------------------------------------------------------
+    @GetMapping("/search/all")
+    @Operation(
+        summary     = "Search food items across all restaurants",
+        description = "Returns all available food items matching the search keyword from all restaurants. "
+                    + "This enables platform-wide 'search for Biryani' functionality."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Search results returned")
+    })
+    public ResponseEntity<ApiResponse<List<FoodItemResponse>>> searchAll(
+            @Parameter(description = "Search keyword")
+            @RequestParam String keyword) {
+        return ResponseEntity.ok(ApiResponse.success(
+                foodItemService.searchAllFoodItems(keyword),
+                "Food items retrieved successfully"));
+    }
 }

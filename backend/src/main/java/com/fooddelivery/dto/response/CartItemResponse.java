@@ -18,4 +18,10 @@ public class CartItemResponse {
     private Integer    quantity;
     private BigDecimal unitPrice;
     private BigDecimal subtotal;   // quantity × unitPrice (computed)
+    
+    // Customization fields
+    private String     size;
+    private String     spiceLevel;
+    private String     addOns;
+    private String     specialInstructions;
 }

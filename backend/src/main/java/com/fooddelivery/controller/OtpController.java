@@ -6,6 +6,7 @@ import com.fooddelivery.repository.UserRepository;
 import com.fooddelivery.service.EmailService;
 import com.fooddelivery.service.TokenStoreService;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.mail.MessagingException;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
@@ -44,7 +45,11 @@ public class OtpController {
             .orElseThrow(() -> new BadRequestException("No account found for that email"));
 
         String otp = tokenStore.createOtp(req.getEmail());
-        emailService.sendOtpEmail(req.getEmail(), otp, user.getName());
+        try {
+            emailService.sendOtpEmail(req.getEmail(), otp, user.getName());
+        } catch (MessagingException e) {
+            log.error("Failed to send OTP email to {}: {}", req.getEmail(), e.getMessage());
+        }
 
         log.info("OTP sent for {}", req.getEmail());
         return ResponseEntity.ok(ApiResponse.success(

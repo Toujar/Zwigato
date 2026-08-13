@@ -163,6 +163,51 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     // ---------------------------------------------------------------
+    // Admin Methods
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<CategoryResponse> getAllCategoriesForAdmin(Boolean isActive, org.springframework.data.domain.Pageable pageable) {
+        org.springframework.data.domain.Page<Category> categories;
+        
+        if (isActive != null) {
+            categories = categoryRepository.findByIsActive(isActive, pageable);
+        } else {
+            categories = categoryRepository.findAll(pageable);
+        }
+        
+        return categories.map(this::toResponse);
+    }
+
+    @Override
+    @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = CacheConstants.CATEGORIES, key = "#id"),
+        @CacheEvict(value = CacheConstants.CATEGORIES, key = "'allActive'")
+    })
+    public void deactivateCategory(Long id) {
+        Category category = findById(id);
+        category.setIsActive(false);
+        categoryRepository.save(category);
+        log.info("Admin deactivated category: {} ({})", category.getName(), id);
+    }
+
+    @Override
+    @Transactional
+    @Caching(
+        put   = { @CachePut(value = CacheConstants.CATEGORIES, key = "#id") },
+        evict = { @CacheEvict(value = CacheConstants.CATEGORIES, key = "'allActive'") }
+    )
+    public CategoryResponse activateCategory(Long id) {
+        Category category = findById(id);
+        category.setIsActive(true);
+        Category updated = categoryRepository.save(category);
+        log.info("Admin activated category: {} ({})", updated.getName(), id);
+        return toResponse(updated);
+    }
+
+    // ---------------------------------------------------------------
     // Private helpers
     // ---------------------------------------------------------------
 

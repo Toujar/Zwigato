@@ -166,4 +166,29 @@ public class CartController {
         cartService.clearCart();
         return ResponseEntity.ok(ApiResponse.success(null, "Cart cleared successfully"));
     }
+
+    // ----------------------------------------------------------------
+    // GET /api/cart/check-conflict  — CUSTOMER only
+    // ----------------------------------------------------------------
+    @GetMapping("/check-conflict")
+    @Operation(
+        summary     = "Check restaurant conflict before adding item",
+        description = "Returns true if adding this food item would conflict with existing cart items. "
+                    + "Used to trigger the 'Clear cart?' confirmation dialog on the frontend. "
+                    + "Example: cart has items from Restaurant A, user tries to add from Restaurant B → returns true."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Conflict status returned"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "CUSTOMER role required"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Food item not found")
+    })
+    public ResponseEntity<ApiResponse<Boolean>> checkConflict(
+            @Parameter(description = "Food item ID to check", required = true)
+            @RequestParam Long foodItemId) {
+        boolean hasConflict = cartService.hasConflictingRestaurant(foodItemId);
+        return ResponseEntity.ok(ApiResponse.success(
+                hasConflict,
+                hasConflict ? "Cart has items from different restaurant" : "No conflict"));
+    }
 }

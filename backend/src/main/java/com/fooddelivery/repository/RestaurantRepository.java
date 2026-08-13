@@ -284,4 +284,69 @@ public interface RestaurantRepository extends JpaRepository<Restaurant, Long> {
      */
     @Query("SELECT DISTINCT r.city FROM Restaurant r WHERE r.isActive = true ORDER BY r.city ASC")
     List<String> findDistinctActiveCities();
+
+    // ----------------------------------------------------------
+    // 7. Location-Based Queries (Geospatial)
+    // ----------------------------------------------------------
+
+    /**
+     * Returns all active and open restaurants for a given city,
+     * ordered by distance from user coordinates.
+     *
+     * Used by: Location-based restaurant filtering and sorting.
+     * In-memory distance calculation using Haversine formula.
+     *
+     * @param city       the city to search in
+     * @param pageable   pagination and sort
+     * @return paginated list of restaurants ordered by distance
+     */
+    @Query("""
+        SELECT r FROM Restaurant r
+        WHERE r.isActive = true
+          AND r.isOpen = true
+          AND LOWER(r.city) = LOWER(:city)
+          AND r.latitude IS NOT NULL
+          AND r.longitude IS NOT NULL
+        ORDER BY r.rating DESC
+        """)
+    Page<Restaurant> findNearbyRestaurants(
+            @Param("city") String city,
+            Pageable pageable);
+
+    /**
+     * Searches for restaurants by keyword across all cities,
+     * where distance calculations are possible (coordinates exist).
+     *
+     * Used by: Platform-wide search for a specific dish or restaurant.
+     * Results can be sorted by distance on the service layer.
+     *
+     * @param keyword  the search term (partial match on name)
+     * @param pageable pagination
+     * @return paginated list of restaurants matching the keyword
+     */
+    @Query("""
+        SELECT r FROM Restaurant r
+        WHERE r.isActive = true
+          AND r.isOpen = true
+          AND LOWER(r.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
+          AND r.latitude IS NOT NULL
+          AND r.longitude IS NOT NULL
+        """)
+    Page<Restaurant> searchAllRestaurantsByKeyword(
+            @Param("keyword") String keyword,
+            Pageable pageable);
+
+    // ----------------------------------------------------------
+    // 8. Admin Dashboard Additional Queries
+    // ----------------------------------------------------------
+
+    /**
+     * Count active and open restaurants.
+     */
+    Long countByIsActiveAndIsOpen(Boolean isActive, Boolean isOpen);
+
+    /**
+     * Count restaurants by owner ID.
+     */
+    Long countByOwnerId(Long ownerId);
 }

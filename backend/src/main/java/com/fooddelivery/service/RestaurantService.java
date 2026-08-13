@@ -23,4 +23,27 @@ public interface RestaurantService {
     void deleteRestaurant(Long id);
 
     RestaurantResponse toggleOpen(Long id);
+
+    /**
+     * Get nearby restaurants sorted by distance from user's location.
+     *
+     * @param latitude  user's latitude (optional)
+     * @param longitude user's longitude (optional)
+     * @param city      optional city filter
+     * @param pageable  pagination
+     * @return paginated list of nearby restaurants
+     */
+    Page<RestaurantResponse> getNearbyRestaurants(Double latitude, Double longitude, String city, Pageable pageable);
+
+    /**
+     * Search restaurants across all cities by keyword.
+     * Optional location-based sorting.
+     *
+     * @param keyword   search keyword
+     * @param latitude  user's latitude (optional, for distance sorting)
+     * @param longitude user's longitude (optional, for distance sorting)
+     * @param pageable  pagination
+     * @return paginated list of matching restaurants
+     */
+    Page<RestaurantResponse> searchAllRestaurants(String keyword, Double latitude, Double longitude, Pageable pageable);
 }

@@ -262,9 +262,54 @@ public class RestaurantServiceImpl implements RestaurantService {
                 .rating(r.getRating())
                 .deliveryTime(r.getDeliveryTime())
                 .minOrderAmount(r.getMinOrderAmount())
+                .deliveryFee(r.getDeliveryFee())
+                .deliveryRadius(r.getDeliveryRadius())
+                .latitude(r.getLatitude())
+                .longitude(r.getLongitude())
+                .operatingHours(r.getOperatingHours())
                 .isOpen(r.getIsOpen())
                 .isActive(r.getIsActive())
                 .createdAt(r.getCreatedAt())
                 .build();
+    }
+
+    // ---------------------------------------------------------------
+    // Location-based queries
+    // ---------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<RestaurantResponse> getNearbyRestaurants(Double latitude, Double longitude, String city, Pageable pageable) {
+        Page<Restaurant> restaurants;
+        
+        if (city != null && !city.isBlank()) {
+            restaurants = restaurantRepository.findNearbyRestaurants(city, pageable);
+        } else {
+            restaurants = restaurantRepository.findByIsActiveTrueAndIsOpenTrue(pageable);
+        }
+
+        return restaurants.map(r -> {
+            RestaurantResponse response = toResponse(r);
+            // Calculate distance if user coordinates are provided
+            if (latitude != null && longitude != null) {
+                response.setDistance(r.calculateDistance(latitude, longitude));
+            }
+            return response;
+        });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<RestaurantResponse> searchAllRestaurants(String keyword, Double latitude, Double longitude, Pageable pageable) {
+        Page<Restaurant> restaurants = restaurantRepository.searchAllRestaurantsByKeyword(keyword.trim(), pageable);
+
+        return restaurants.map(r -> {
+            RestaurantResponse response = toResponse(r);
+            // Calculate distance if user coordinates are provided
+            if (latitude != null && longitude != null) {
+                response.setDistance(r.calculateDistance(latitude, longitude));
+            }
+            return response;
+        });
     }
 }

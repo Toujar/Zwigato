@@ -129,6 +129,38 @@ public class CartItem {
     private BigDecimal unitPrice;
 
     // ----------------------------------------------------------
+    // Customization & Special Instructions
+    // ----------------------------------------------------------
+
+    /**
+     * Selected size for this item (e.g., "small", "medium", "large").
+     * Optional — items without variants will leave this null.
+     */
+    @Column(name = "size", length = 50)
+    private String size;
+
+    /**
+     * Spice level preference (e.g., "mild", "medium", "hot").
+     * Optional — defaults to restaurant preference if null.
+     */
+    @Column(name = "spice_level", length = 50)
+    private String spiceLevel;
+
+    /**
+     * JSON or delimited string of add-ons selected for this item.
+     * Example: "extra_cheese,bacon" or {"addOn1": true, "addOn2": false}
+     */
+    @Column(name = "add_ons", columnDefinition = "TEXT")
+    private String addOns;
+
+    /**
+     * Item-level special instructions (e.g., "No onions", "Light sauce").
+     * Stored at the CartItem level so it moves directly to OrderItem at checkout.
+     */
+    @Column(name = "special_instructions", columnDefinition = "TEXT")
+    private String specialInstructions;
+
+    // ----------------------------------------------------------
     // Auditing
     // ----------------------------------------------------------
 

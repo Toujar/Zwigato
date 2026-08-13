@@ -2,6 +2,7 @@ package com.fooddelivery.entity;
 
 import com.fooddelivery.entity.enums.PaymentMethod;
 import com.fooddelivery.entity.enums.PaymentStatus;
+import com.fooddelivery.entity.enums.RefundStatus;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.*;
@@ -143,6 +144,71 @@ public class Payment {
     @Size(max = 255)
     @Column(name = "transaction_id", length = 255, unique = true)
     private String transactionId;
+
+    /**
+     * Razorpay order ID (for Razorpay integration).
+     * Used to create payments and track against Razorpay's order records.
+     */
+    @Size(max = 255)
+    @Column(name = "razorpay_order_id", length = 255)
+    private String razorpayOrderId;
+
+    /**
+     * Razorpay payment ID (returned after payment success).
+     * Used for refunds and payment reconciliation.
+     */
+    @Size(max = 255)
+    @Column(name = "razorpay_payment_id", length = 255, unique = true)
+    private String razorpayPaymentId;
+
+    /**
+     * Razorpay refund ID (if refund was initiated).
+     * Set when refund is processed.
+     */
+    @Size(max = 255)
+    @Column(name = "razorpay_refund_id", length = 255)
+    private String razorpayRefundId;
+
+    /**
+     * Amount refunded (partial or full).
+     * Initially 0, updated when refund is processed.
+     */
+    @DecimalMin(value = "0.0", message = "Refund amount cannot be negative")
+    @Column(name = "refund_amount", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal refundAmount = BigDecimal.ZERO;
+
+    /**
+     * Refund status (PENDING, COMPLETED, FAILED).
+     * Tracks async refund processing.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_status", length = 20)
+    private RefundStatus refundStatus;
+
+    /**
+     * Number of retry attempts for failed payments.
+     * Incremented each time payment is retried.
+     */
+    @Min(value = 0)
+    @Column(name = "retry_count", nullable = false)
+    @Builder.Default
+    private Integer retryCount = 0;
+
+    /**
+     * Max retry attempts before giving up on payment.
+     */
+    @Min(value = 1)
+    @Column(name = "max_retries", nullable = false)
+    @Builder.Default
+    private Integer maxRetries = 3;
+
+    /**
+     * Timestamp of last retry attempt.
+     * Used to implement exponential backoff.
+     */
+    @Column(name = "last_retry_at")
+    private LocalDateTime lastRetryAt;
 
     /**
      * Raw JSON response body from the payment gateway.

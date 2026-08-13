@@ -18,4 +18,10 @@ public class OrderItemResponse {
     private Integer    quantity;
     private BigDecimal unitPrice;
     private BigDecimal subtotal;
+    
+    // Customization fields (immutable snapshots from order time)
+    private String     size;
+    private String     spiceLevel;
+    private String     addOns;
+    private String     specialInstructions;
 }

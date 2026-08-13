@@ -73,6 +73,17 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByTransactionId(String transactionId);
 
     /**
+     * Finds a payment by Razorpay order ID.
+     *
+     * Used by: Payment confirmation handler — when Razorpay returns
+     * an order ID after payment success, this query retrieves the
+     * corresponding Payment record.
+     *
+     * SQL: SELECT * FROM payments WHERE razorpay_order_id = ?
+     */
+    Optional<Payment> findByRazorpayOrderId(String razorpayOrderId);
+
+    /**
      * Finds a payment by order ID, eagerly fetching the order
      * and its user in one query.
      *

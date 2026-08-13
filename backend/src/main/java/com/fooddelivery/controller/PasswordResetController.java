@@ -7,6 +7,7 @@ import com.fooddelivery.repository.UserRepository;
 import com.fooddelivery.service.EmailService;
 import com.fooddelivery.service.TokenStoreService;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.mail.MessagingException;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -47,7 +48,11 @@ public class PasswordResetController {
         // Always return 200 — don't leak whether the email exists
         userRepository.findByEmail(req.getEmail()).ifPresent(user -> {
             String token = tokenStore.createResetToken(req.getEmail());
-            emailService.sendPasswordResetEmail(req.getEmail(), token, user.getName());
+            try {
+                emailService.sendPasswordResetEmail(req.getEmail(), token, user.getName());
+            } catch (MessagingException e) {
+                log.error("Failed to send password reset email to {}: {}", req.getEmail(), e.getMessage());
+            }
             log.info("Password reset token created for {}", req.getEmail());
         });
         return ResponseEntity.ok(ApiResponse.success(

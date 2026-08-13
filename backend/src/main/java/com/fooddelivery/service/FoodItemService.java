@@ -21,4 +21,12 @@ public interface FoodItemService {
     void deleteFoodItem(Long id);
 
     FoodItemResponse toggleAvailability(Long id);
+
+    /**
+     * Search food items across all restaurants by keyword.
+     *
+     * @param keyword search term
+     * @return list of all matching available food items
+     */
+    List<FoodItemResponse> searchAllFoodItems(String keyword);
 }

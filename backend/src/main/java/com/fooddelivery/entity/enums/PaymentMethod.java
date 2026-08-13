@@ -5,10 +5,12 @@ package com.fooddelivery.entity.enums;
  * Maps to the MySQL ENUM in the `payments` table.
  */
 public enum PaymentMethod {
-    CREDIT_CARD,
-    DEBIT_CARD,
-    UPI,
-    NET_BANKING,
-    WALLET,
-    CASH_ON_DELIVERY
+    ONLINE,           // Online payments (UPI, cards, net banking, wallets)
+    COD,              // Cash on Delivery
+    CREDIT_CARD,      // Credit card payments
+    DEBIT_CARD,       // Debit card payments
+    UPI,              // UPI payments
+    NET_BANKING,      // Net banking
+    WALLET,           // Digital wallets
+    CASH_ON_DELIVERY  // Cash on delivery (alternative to COD)
 }

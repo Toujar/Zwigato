@@ -155,6 +155,29 @@ public class FoodItem {
     private Boolean isAvailable = true;
 
     // ----------------------------------------------------------
+    // Rating
+    // ----------------------------------------------------------
+
+    /**
+     * Average customer rating from 0.0 to 5.0.
+     * Updated when customers submit reviews for this dish.
+     * Starts at 0 (no reviews yet).
+     */
+    @DecimalMin(value = "0.0", message = "Rating cannot be negative")
+    @DecimalMax(value = "5.0", message = "Rating cannot exceed 5.0")
+    @Column(name = "rating", nullable = false, precision = 2, scale = 1)
+    @Builder.Default
+    private BigDecimal rating = BigDecimal.ZERO;
+
+    /**
+     * Count of total reviews received.
+     * Used to show "Based on 42 ratings" or similar.
+     */
+    @Column(name = "review_count", nullable = false)
+    @Builder.Default
+    private Integer reviewCount = 0;
+
+    // ----------------------------------------------------------
     // Auditing
     // ----------------------------------------------------------
 

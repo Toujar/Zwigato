@@ -127,12 +127,44 @@ public class OrderItem {
     private BigDecimal subtotal;
 
     // ----------------------------------------------------------
+    // Customization & Special Instructions (immutable snapshots)
+    // ----------------------------------------------------------
+
+    /**
+     * Selected size for this ordered item (e.g., "small", "medium", "large").
+     * Copied from CartItem at order time — immutable for order history.
+     */
+    @Column(name = "size", length = 50)
+    private String size;
+
+    /**
+     * Spice level preference at order time (e.g., "mild", "medium", "hot").
+     * Copied from CartItem — immutable snapshot.
+     */
+    @Column(name = "spice_level", length = 50)
+    private String spiceLevel;
+
+    /**
+     * JSON or delimited string of add-ons at order time.
+     * Copied from CartItem — immutable for invoicing.
+     */
+    @Column(name = "add_ons", columnDefinition = "TEXT")
+    private String addOns;
+
+    /**
+     * Item-level special instructions at order time.
+     * Copied from CartItem — immutable for order fulfillment.
+     */
+    @Column(name = "special_instructions", columnDefinition = "TEXT")
+    private String specialInstructions;
+
+    // ----------------------------------------------------------
     // Factory Method
     // ----------------------------------------------------------
 
     /**
      * Creates an OrderItem from a CartItem, snapshotting the current
-     * unit price and computing the subtotal.
+     * unit price, quantity, and customizations.
      *
      * @param cartItem  the source cart line
      * @return a fully populated OrderItem (order reference still null — set by Order.addOrderItem)
@@ -147,6 +179,10 @@ public class OrderItem {
                 .quantity(quantity)
                 .unitPrice(unitPrice)
                 .subtotal(subtotal)
+                .size(cartItem.getSize())
+                .spiceLevel(cartItem.getSpiceLevel())
+                .addOns(cartItem.getAddOns())
+                .specialInstructions(cartItem.getSpecialInstructions())
                 .build();
     }
 }

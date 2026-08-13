@@ -87,28 +87,124 @@ public class PaymentController {
     // POST /api/payments/confirm/{transactionId}  — ADMIN only
     // (in production: called by payment gateway webhook with API key auth)
     // ----------------------------------------------------------------
-    @PostMapping("/confirm/{transactionId}")
+    @PostMapping("/confirm")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(
-        summary     = "Confirm a payment via transaction ID (ADMIN / gateway webhook)",
-        description = "Marks the payment as SUCCESS and auto-advances the order to CONFIRMED. "
-                    + "Idempotent — duplicate calls for an already-confirmed payment are ignored. "
-                    + "In production this endpoint is called by the payment gateway webhook "
-                    + "and should be protected by HMAC signature verification."
+        summary     = "Confirm a payment via Razorpay callback (ADMIN / gateway webhook)",
+        description = "Verifies Razorpay signature and marks payment as SUCCESS. "
+                    + "Auto-advances order to CONFIRMED. "
+                    + "Idempotent — duplicate callbacks are safely ignored. "
+                    + "In production this is called by Razorpay webhook with signature verification."
     )
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Payment confirmed (SUCCESS)"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Already processed (idempotent return)"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Invalid signature or already processed"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "ADMIN role required"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Transaction ID not found")
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Order/Payment not found")
     })
     public ResponseEntity<ApiResponse<PaymentResponse>> confirm(
-            @Parameter(description = "Gateway transaction ID", required = true)
-            @PathVariable String transactionId) {
+            @Parameter(description = "Razorpay payment ID", required = true)
+            @RequestParam String razorpayPaymentId,
+            @Parameter(description = "Razorpay order ID", required = true)
+            @RequestParam String razorpayOrderId,
+            @Parameter(description = "Razorpay signature for verification", required = true)
+            @RequestParam String signature) {
         return ResponseEntity.ok(ApiResponse.success(
-                paymentService.confirmPayment(transactionId),
+                paymentService.confirmPayment(razorpayPaymentId, razorpayOrderId, signature),
                 "Payment confirmed successfully"));
+    }
+
+    // ----------------------------------------------------------------
+    // POST /api/payments/retry/{orderId}  — CUSTOMER only
+    // ----------------------------------------------------------------
+    @PostMapping("/retry/{orderId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+        summary     = "Retry a failed payment (CUSTOMER only)",
+        description = "Allows customer to retry a FAILED payment. "
+                    + "Increments retry counter (max 3 attempts). "
+                    + "Enforces 5-minute delay between attempts to prevent abuse. "
+                    + "Returns new Razorpay order for checkout. "
+                    + "Returns 400 if max retries exceeded or payment not FAILED."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "New payment initiated for retry"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400",
+            description = "Not a FAILED payment / max retries exceeded / retry delay not met"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "CUSTOMER role required or not the order owner"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Order or Payment not found")
+    })
+    public ResponseEntity<ApiResponse<PaymentResponse>> retry(
+            @Parameter(description = "Order ID", required = true)
+            @PathVariable Long orderId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                paymentService.retryPayment(orderId),
+                "Payment retry initiated. Please complete the new payment."));
+    }
+
+    // ----------------------------------------------------------------
+    // POST /api/payments/refund/{orderId}  — CUSTOMER or ADMIN
+    // ----------------------------------------------------------------
+    @PostMapping("/refund/{orderId}")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
+    @Operation(
+        summary     = "Process refund for cancelled order (CUSTOMER / ADMIN)",
+        description = "Initiates async refund via Razorpay for a paid order. "
+                    + "CUSTOMER can refund their own order. ADMIN can refund any order. "
+                    + "Supports partial refunds (e.g., deduction for cancellation fee). "
+                    + "Returns payment with refund status PENDING. "
+                    + "Returns 400 if payment not SUCCESS or refund amount invalid."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Refund initiated (PENDING)"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400",
+            description = "Not a SUCCESS payment / invalid refund amount / already refunded"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403",
+            description = "CUSTOMER / ADMIN role required or not the order owner"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Order or Payment not found")
+    })
+    public ResponseEntity<ApiResponse<PaymentResponse>> refund(
+            @Parameter(description = "Order ID", required = true)
+            @PathVariable Long orderId,
+            @Parameter(description = "Refund amount (optional, defaults to full amount)", required = false)
+            @RequestParam(required = false) java.math.BigDecimal refundAmount) {
+
+        PaymentResponse payment = paymentService.getPaymentByOrderId(orderId);
+        java.math.BigDecimal amount = refundAmount != null ? refundAmount : payment.getAmount();
+
+        return ResponseEntity.ok(ApiResponse.success(
+                paymentService.processRefund(orderId, amount),
+                "Refund initiated. Status will be updated when gateway confirms."));
+    }
+
+    // ----------------------------------------------------------------
+    // GET /api/payments/refund/status/{orderId}  — CUSTOMER or ADMIN
+    // ----------------------------------------------------------------
+    @GetMapping("/refund/status/{orderId}")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
+    @Operation(
+        summary     = "Check refund status (CUSTOMER / ADMIN)",
+        description = "Polls Razorpay for async refund completion status. "
+                    + "Returns updated payment with refund status: PENDING/COMPLETED/FAILED. "
+                    + "Returns 400 if no refund is in progress for this order."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Refund status returned"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "No refund in progress"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403",
+            description = "CUSTOMER / ADMIN role required or not the order owner"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Order or Payment not found")
+    })
+    public ResponseEntity<ApiResponse<PaymentResponse>> checkRefundStatus(
+            @Parameter(description = "Order ID", required = true)
+            @PathVariable Long orderId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                paymentService.checkRefundStatus(orderId),
+                "Refund status retrieved successfully"));
     }
 
     // ----------------------------------------------------------------
