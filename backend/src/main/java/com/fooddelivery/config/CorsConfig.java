@@ -24,7 +24,8 @@ public class CorsConfig {
         // Allowed origins (update for production)
         config.setAllowedOrigins(List.of(
                 "http://localhost:5173",   // Vite dev server
-                "http://localhost:3000"    // CRA / fallback
+                "http://localhost:3000",    // CRA / fallback
+                "https://zwigato-six.vercel.app"
         ));
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
