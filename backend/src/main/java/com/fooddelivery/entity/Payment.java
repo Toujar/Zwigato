@@ -183,7 +183,11 @@ public class Payment {
      * Tracks async refund processing.
      */
     @Enumerated(EnumType.STRING)
-    @Column(name = "refund_status", length = 20)
+    @Column(
+        name             = "refund_status",
+        length           = 20,
+        columnDefinition = "VARCHAR(20)"
+    )
     private RefundStatus refundStatus;
 
     /**
