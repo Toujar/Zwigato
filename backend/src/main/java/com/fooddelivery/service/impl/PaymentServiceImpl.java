@@ -97,6 +97,12 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         try {
+            // Check if Razorpay is configured
+            if (!razorpayConfig.isConfigured()) {
+                throw new BadRequestException(
+                    "Payment gateway is not configured. Please contact support.");
+            }
+
             // Create Razorpay order
             RazorpayClient razorpayClient = razorpayConfig.razorpayClient();
             JSONObject orderRequest = new JSONObject();
@@ -272,6 +278,12 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         try {
+            // Check if Razorpay is configured
+            if (!razorpayConfig.isConfigured()) {
+                throw new BadRequestException(
+                    "Payment gateway is not configured. Please contact support.");
+            }
+
             RazorpayClient razorpayClient = razorpayConfig.razorpayClient();
 
             // Create Razorpay refund
@@ -317,6 +329,12 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         try {
+            // Check if Razorpay is configured
+            if (!razorpayConfig.isConfigured()) {
+                throw new BadRequestException(
+                    "Payment gateway is not configured. Please contact support.");
+            }
+
             RazorpayClient razorpayClient = razorpayConfig.razorpayClient();
             com.razorpay.Refund razorpayRefund = razorpayClient.refunds
                     .fetch(payment.getRazorpayRefundId());
