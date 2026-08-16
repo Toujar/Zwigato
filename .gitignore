@@ -8,8 +8,6 @@ backend/.mvn/
 *.war
 *.ear
 *.log
-backend/src/main/resources/application-prod.properties
-
 # ========================
 # Frontend
 # ========================
